@@ -2,5 +2,5 @@
   <Configurations>
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="DirectX_GameEngine.vcxproj" />
+  <Project Path="DirectX_GameEngine.vcxproj" Id="b818c272-c69c-4eca-a5a4-a3d8a6f7dbc8" />
 </Solution>
