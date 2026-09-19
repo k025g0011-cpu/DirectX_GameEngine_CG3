@@ -364,3 +364,7 @@ FodyWeavers.xsd
 
 # DirectXTex Compiled Shaders
 **/DirectXTex/Shaders/Compiled/
+
+# Crash dump files
+*.dmp
+Dumps/
