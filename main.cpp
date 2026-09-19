@@ -216,6 +216,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
     // ════════════════════════════════════════
+    // デバッグレイヤーの有効化
+    // 必ずDevice生成より前に行う(後からでは適用されない)
+    // ════════════════════════════════════════
+    #ifdef _DEBUG
+        ID3D12Debug1* debugController = nullptr;
+        if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
+            // デバッグレイヤーを有効化する
+            debugController->EnableDebugLayer();
+            // さらにGPU側でもチェックを行うようにする
+            debugController->SetEnableGPUBasedValidation(TRUE);
+        }
+    #endif
+
+    // ════════════════════════════════════════
     // D3D12Deviceの生成
     // ════════════════════════════════════════
     // 生成したデバイスのアドレス格納用の変数(
@@ -242,6 +256,44 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     // 初期化完了のログを出す
     Log(logStream, "Complete create D3D12Device!!!");
 
+    // ════════════════════════════════════════
+// エラー・警告が出たら即停止させる
+// DirectX12のエラーはコンパイル時に分からないので、実行時に止めて気づけるようにする
+// ════════════════════════════════════════
+#ifdef _DEBUG
+    ID3D12InfoQueue* infoQueue = nullptr;
+    if (SUCCEEDED(device->QueryInterface(IID_PPV_ARGS(&infoQueue)))) {
+        // ヤバイエラー時に止まる
+        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
+        // エラー時に止まる
+        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
+        // 警告時に止まる
+        infoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
+
+        // ────────────────────────────────────────
+        // エラーと警告の抑制
+        // どうにもならないものだけをここに入れる。まずは対処を試みること
+        // ────────────────────────────────────────
+        // 抑制するメッセージのID
+        D3D12_MESSAGE_ID denyIds[] = {
+            // Windows11でのDXGIデバッグレイヤーとDX12デバッグレイヤーの相互作用バグによるエラーメッセージ
+            // https://stackoverflow.com/questions/69805245/directx-12-application-is-crashing-in-windows-11
+            D3D12_MESSAGE_ID_RESOURCE_BARRIER_MISMATCHING_COMMAND_LIST_TYPE
+        };
+        // 抑制するレベル
+        D3D12_MESSAGE_SEVERITY severities[] = { D3D12_MESSAGE_SEVERITY_INFO };
+        D3D12_INFO_QUEUE_FILTER filter{};
+        filter.DenyList.NumIDs = _countof(denyIds);
+        filter.DenyList.pIDList = denyIds;
+        filter.DenyList.NumSeverities = _countof(severities);
+        filter.DenyList.pSeverityList = severities;
+        // 指定したメッセージの表示を抑制する
+        infoQueue->PushStorageFilter(&filter);
+
+        // 解放
+        infoQueue->Release();
+    }
+#endif
 
     // ════════════════════════════════════════
     // コマンドキューを生成する
@@ -349,6 +401,24 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     device->CreateRenderTargetView(swapChainResources[1], &rtvDesc, rtvHandles[1]); // (１．どのリソースに対してのView、２．描画の仕方の設定　３．生成されるViewの格納場所）
 
 
+    // ════════════════════════════════════════
+   // FenceとEventを生成する
+   // GPUの実行完了をCPU側で待つための仕組み
+   // ════════════════════════════════════════
+   // 初期値0でFenceを作る
+    ID3D12Fence* fence = nullptr;
+    uint64_t fenceValue = 0; // 次にGPUに書き込んでもらう予定の値。CPU側のカウンタ
+    hr = device->CreateFence(
+        fenceValue,                // Fenceの初期値
+        D3D12_FENCE_FLAG_NONE,     // フラグ
+        IID_PPV_ARGS(&fence));     // 生成したFenceのアドレスを入れる変数
+    assert(SUCCEEDED(hr));
+
+    // FenceのSignalを待つためのイベントを作成する(EventはWindowsの持ち物)
+    HANDLE fenceEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    assert(fenceEvent != nullptr);
+
+
     // ────────────────────────────────────────
     // CrashHandlerの動作確認用(確認したらコメントアウトに戻す)
     // 「デバッグなしで実行」で起動すること
@@ -371,11 +441,39 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             // ────────────────────────────────────────
             // これから書き込むバックバッファのインデックスを取得
             UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
+
+            // ────────────────────────────────────────
+            // TransitionBarrierを張る(PRESENT → RENDER_TARGET)
+            // ────────────────────────────────────────
+            D3D12_RESOURCE_BARRIER barrier{};
+            // 今回のバリアはTransition
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            // Noneにしておく
+            barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+            // バリアを張る対象のリソース。現在のバックバッファに対して行う
+            barrier.Transition.pResource = swapChainResources[backBufferIndex];
+            // 遷移前(現在)のResourceState
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT; // スワップチェーンの持つ２つのリソースは初期状態 PRESENT
+            // 遷移後のResourceState
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            // TransitionBarrierを張る
+            commandList->ResourceBarrier(1, &barrier);
+
+
             // 描画先のRTVを設定する
             commandList->OMSetRenderTargets(1, &rtvHandles[backBufferIndex], false, nullptr);
             // 指定した色で画面全体をクリアする
             float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f }; // 青っぽい色。RGBAの順
             commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
+
+
+            // 画面に描く処理はすべて終わり、画面に映すので、状態を遷移
+            // 今回はRenderTargetからPresentにする
+            barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+            barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
+            // TransitionBarrierを張る
+            commandList->ResourceBarrier(1, &barrier);
+
             // コマンドリストの内容を確定させる。すべてのコマンドを積んでからCloseすること
             hr = commandList->Close();
             assert(SUCCEEDED(hr));
@@ -386,8 +484,29 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             // GPUにコマンドリストの実行を行わせる
             ID3D12CommandList* commandLists[] = { commandList };
             commandQueue->ExecuteCommandLists(1, commandLists);
+
             // GPUとOSに画面の交換を行うよう通知する
-            swapChain->Present(1, 0);
+            swapChain->Present(1, 0); // 描き終わったら表と入れ替えてっていう命令
+
+
+            // ────────────────────────────────────────
+            // GPUの実行完了を待つ(この後Resetするので、確実に待ってから行う)
+            // ────────────────────────────────────────
+            // Fenceの値を更新
+            fenceValue++;
+            // GPUがここまでたどり着いたときに、Fenceの値を指定した値に代入するようにSignalを送る
+            commandQueue->Signal(fence, fenceValue);
+
+            // Fenceの値が指定したSignal値にたどり着いているか確認する
+            // GetCompletedValueの初期値はFence作成時に渡した初期値
+            if (fence->GetCompletedValue() < fenceValue) {
+                // 指定したSignalにたどりついていないので、たどり着くまで待つようにイベントを設定する
+                fence->SetEventOnCompletion(fenceValue, fenceEvent);
+                // イベント待つ
+                WaitForSingleObject(fenceEvent, INFINITE);
+            }
+
+
             // 次のフレーム用のコマンドリストを準備
             hr = commandAllocator->Reset();
             assert(SUCCEEDED(hr));
