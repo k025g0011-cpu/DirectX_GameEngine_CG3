@@ -9,6 +9,15 @@
 #include <dxgi1_6.h>
 #include <cassert>
 #include <dxcapi.h>
+#include "MathUtility.h"
+// imgui用のincludeと外部関数
+#ifdef USE_IMGUI
+#include "externals/imgui/imgui.h"
+#include "externals/imgui/imgui_impl_dx12.h"
+#include "externals/imgui/imgui_impl_win32.h"
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+#endif
+// -------------------------
 
 // Debug用のあれやこれやを使えるようにする
 #include <dbghelp.h>
@@ -24,15 +33,19 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 
-
-struct Vector4 {
-    float x, y, z, w;
-};
-
-
 // ウィンドウプロシージャ
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg,
     WPARAM wparam, LPARAM lparam) {
+
+    // ────────────────────────────────────────────────────────
+    // ImGui 用のメッセージハンドリング
+    // ────────────────────────────────────────────────────────
+#ifdef USE_IMGUI
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam)) {
+        return true;
+    }
+#endif
+
     // メッセージに応じてゲーム固有の処理を行う
     switch (msg) {
         // ウィンドウが破棄された
@@ -227,6 +240,23 @@ ID3D12Resource* CreateBufferResource(ID3D12Device* device, size_t sizeInBytes) {
         IID_PPV_ARGS(&bufferResource));
     assert(SUCCEEDED(hr));
     return bufferResource;
+}
+
+// ════════════════════════════════════════
+// CreateDescriptorHeap関数
+// View（リソースの説明書）を格納するディスクリプターヒープを作る関数
+// ════════════════════════════════════════
+ID3D12DescriptorHeap* CreateDescriptorHeap(
+    ID3D12Device* device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)
+{
+    ID3D12DescriptorHeap* descriptorHeap = nullptr;
+    D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
+    descriptorHeapDesc.Type = heapType;
+    descriptorHeapDesc.NumDescriptors = numDescriptors;
+    descriptorHeapDesc.Flags = shaderVisible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    HRESULT hr = device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&descriptorHeap));
+    assert(SUCCEEDED(hr));
+    return descriptorHeap;
 }
 
 
@@ -478,18 +508,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     assert(SUCCEEDED(hr));
 
     // ════════════════════════════════════════
-    // ディスクリプタヒープの生成(RTV用)
+    // ディスクリプタヒープの生成
     // 「このリソースをこう使う」という札(Descriptor)を並べておく棚
     // ════════════════════════════════════════
-    ID3D12DescriptorHeap* rtvDescriptorHeap = nullptr;
-    D3D12_DESCRIPTOR_HEAP_DESC rtvDescriptorHeapDesc{};
-    rtvDescriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; // レンダーターゲットビュー用
-    rtvDescriptorHeapDesc.NumDescriptors = 2;                    // ダブルバッファ用に2つ。多くても別に構わない
-    hr = device->CreateDescriptorHeap(
-        &rtvDescriptorHeapDesc, // ヒープの設定
-        IID_PPV_ARGS(&rtvDescriptorHeap)); // 生成したRTVディスクリプターヒープのアドレスを入れる変数
-    // ディスクリプタヒープが作れなかったので起動できない
-    assert(SUCCEEDED(hr));
+    // RTV用のヒープでディスクリプタの数は2。RTVはShader内で触るものではないので、ShaderVisibleはfalse
+    ID3D12DescriptorHeap* rtvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, 2, false);
+
+    // SRV用のヒープでディスクリプタの数は128。SRVはShader内で触るものなので、ShaderVisibleはtrue
+    // SRV、CBV、UAVを一緒に格納できるディスクリプターヒープ　（入れられるViewの種類が多い分、サイズが大きくなる）
+    ID3D12DescriptorHeap* srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
     // ════════════════════════════════════════
     // SwapChainからResourceを引っ張ってくる
@@ -572,11 +599,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
         D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT; // 「InputAssembler（頂点入力）を使ってよい」という許可
 
 
-    // RootParameter作成。複数設定できるので配列。今回は結果1つだけなので長さ1の配列
-    D3D12_ROOT_PARAMETER rootParameters[1] = {};
+    // RootParameter作成。複数設定できるので配列。シェーダーのレジスタの数に応じて上昇
+    D3D12_ROOT_PARAMETER rootParameters[2] = {};
     rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
     rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  // PixelShaderで使う
     rootParameters[0].Descriptor.ShaderRegister = 0;                     // レジスタ番号0とバインド
+    rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
+    rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;  // PixelShaderで使う
+    rootParameters[1].Descriptor.ShaderRegister = 0;                     // レジスタ番号0とバインド
     descriptionRootSignature.pParameters = rootParameters;               // ルートパラメータ配列へのポインタ
     descriptionRootSignature.NumParameters = _countof(rootParameters);   // 配列の長さ
 
@@ -735,9 +765,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     // ════════════════════════════════════════
     // 実際に頂点リソースを作る
     ID3D12Resource* vertexResource = CreateBufferResource(device, sizeof(Vector4) * 3); // これから入れるデータのサイズを考えてサイズ指定しようね
-   
-
-
+  
+    
     // ════════════════════════════════════════
     // VertexBufferViewを作成する
     // 頂点リソースの読み方を伝えるメモ。DescriptorHeapには置かない >>>> 描画時にコマンドリストへ直接渡します
@@ -780,6 +809,36 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
     // ════════════════════════════════════════
+    // TransformationMatrix用のResourceを作る
+    // Matrix4x4 1つ分のサイズを用意する
+    // ════════════════════════════════════════
+    ID3D12Resource* wvpResource = CreateBufferResource(device, sizeof(Matrix4x4));
+    // データを書き込む
+    Matrix4x4* wvpData = nullptr;
+    // 書き込むためのアドレスを取得
+    wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
+    // 単位行列を書きこんでおく
+    *wvpData = MakeIdentity4x4();
+
+    // Transform変数を作る
+    Transform transform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
+    // カメラのTransformを作る。z = -5 の位置で z+ 方向を向いているカメラ
+    Transform cameraTransform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -5.0f} };
+#pragma region  MyRegion
+    /*
+    ??? なぜ行列を直接持たないのか ???
+
+    ＞＞＞行列（16個の数値）を直接持っていると、「今どれくらい回転しているか」が人間には読めません。
+
+    cpp
+    // ✕ 行列を直接持つ
+    Matrix4x4 world;   // 中身を見ても回転量が分からない。少しだけ回したい、もできない
+
+    // ○ Transform を持つ
+    transform.rotate.y += 0.03f;   // 「Y軸に0.03ラジアン足す」と読める
+    */
+#pragma endregion
+    // ════════════════════════════════════════
     // ViewportとScissor
     // Viewport: NDCをウィンドウのどこに写すか / Scissor: 描画してよい範囲の切り抜き
     // ════════════════════════════════════════
@@ -801,12 +860,26 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     scissorRect.top = 0;
     scissorRect.bottom = kClientHeight;
 
-    // ────────────────────────────────────────
-    // CrashHandlerの動作確認用(確認したらコメントアウトに戻す)
-    // 「デバッグなしで実行」で起動すること
-    // ────────────────────────────────────────
-    //uint32_t* p = nullptr;
-    //*p = 100;
+
+    // ════════════════════════════════════════
+    // ImGuiの初期化
+    // ════════════════════════════════════════
+#ifdef USE_IMGUI
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark(); // 他の色種類もある＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞試してみ　by　過去の自分
+    ImGui_ImplWin32_Init(hwnd);
+    ImGui_ImplDX12_Init(device,
+        swapChainDesc.BufferCount,
+        rtvDesc.Format,
+        srvDescriptorHeap,
+        srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+        srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Build();
+#endif
+   
+
 
     MSG msg{};
     // ウィンドウの×ボタンが押されるまでループ
@@ -818,6 +891,52 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
         } else {
             // ゲームの処理
 
+            // ────────────────────────────────────────
+            // ImGui開始処理
+            // ────────────────────────────────────────
+#ifdef USE_IMGUI
+            ImGui_ImplDX12_NewFrame();
+            ImGui_ImplWin32_NewFrame();
+            ImGui::NewFrame();
+#endif
+
+
+            // ────────────────────────────────────────
+            // 三角形の回転
+            // ────────────────────────────────────────
+            transform.rotate.y += 0.03f;
+            Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate); // 拡縮、回転、移動
+            Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate); // ワールド基準で、カメラはどこにいるか
+            Matrix4x4 viewMatrix = Inverse(cameraMatrix);  // カメラ基準で、ワールドはどこにあるか(ワールドをカメラに合わせる）
+            /*
+              やりたいこと    ： カメラ基準の座標が欲しい
+              計算方法       ： 世界全体を、カメラが原点に来るようにずらす
+              結果          ： ずらした後の座標 ＝ カメラ基準の座標
+            */
+
+            Matrix4x4 projectionMatrix = MakePerspectiveMatrix(0.45f,
+                float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+            /*
+            * MakePerspectiveMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
+                                       ↑         ↑            ↑      ↑
+                                      fovY    aspectRatio   nearClip farClip
+
+
+                引数	            値	                    意味
+                fovY	        0.45（ラジアン、約26度）	縦方向の画角。カメラのレンズの広さ
+                aspectRatio	    1.778（16:9）	        画面の横÷縦
+                nearClip	    0.1	                    これより近いものは映さない
+                farClip	        100.0	                これより遠いものは映さない
+            */
+            *wvpData = MakeWVPMatrix(worldMatrix, viewMatrix, projectionMatrix); // これらの行列を掛け合わせる
+
+#ifdef USE_IMGUI
+            // 開発用UIの処理
+            ImGui::ShowDemoWindow();
+
+            // ImGuiの内部コマンドを生成する（描画処理の前）
+            ImGui::Render();
+#endif
             // ────────────────────────────────────────
             // コマンドを積み込んで確定させる
             // ────────────────────────────────────────
@@ -848,7 +967,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f }; // 青っぽい色。RGBAの順
             commandList->ClearRenderTargetView(rtvHandles[backBufferIndex], clearColor, 0, nullptr);
 
-
+            //srvDescriptorHeapは　CBV_SRV_UAV　をまとめて管理する（SAMPLERヒープは別で descriptorHeaps[] に格納）
+            ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap };
+            commandList->SetDescriptorHeaps(1, descriptorHeaps); // srvDescriptorHeapを設定 = 格納されたCBV, SRV, UAVをシェーダーに見せれる
 
             // ────────────────────────────────────────
             // 三角形を描画する
@@ -868,13 +989,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             TRIANGLESTRIP	1つずらしながら、前の2頂点と組み合わせて連続した三角形にする
             */
 #pragma endregion
-            commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress());
+
+            commandList->SetGraphicsRootConstantBufferView(0, materialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、materialResourceアドレスを渡す
 #pragma region  MyRegion
             /*
             rootParameters配列の０番目に紐付けられたシェーダーのレジスタに、         （今回はPSシェーダーのgMaterial:b0)
             第二引数のリソース本体のアドレスを送るぜよ                           （ここにコードで指定した色データが入っており、シェーダのmain関数へ）
             */
 #pragma endregion
+            commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、wvpResourceアドレスを渡す
+
+
             // 描画！(DrawCall/ドローコール)。3頂点で1つのインスタンス。インスタンスについては今後
             commandList->DrawInstanced(3, 1, 0, 0);
 #pragma region  MyRegion
@@ -886,8 +1011,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             StartInstanceLocation	    0	    インスタンス番号をいくつから数えるか
             */
 #pragma endregion
-
-
+            // ===== ImGuiの描画（これも一応BackBufferリソースに書き込む要素なのでbarrierのPRESENTへの遷移よりは上に書く） =====　
+#ifdef USE_IMGUI
+            ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList); // ImGui::Renderのデータと使っているコマンドリストを引数に
+#endif
             // 画面に描く処理はすべて終わり、画面に映すので、状態を遷移
             // 今回はRenderTargetからPresentにする
             barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -937,8 +1064,14 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     }
 
     // ════════════════════════════════════════
-   // 解放処理(生成と逆の順番で解放する)
-   // ════════════════════════════════════════
+    // 解放処理(生成と逆の順番で解放する)
+    // ════════════════════════════════════════
+#ifdef USE_IMGUI
+    ImGui_ImplDX12_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+#endif
+    wvpResource->Release();
     materialResource->Release();
     vertexResource->Release();
     graphicsPipelineState->Release();
@@ -951,6 +1084,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     vertexShaderBlob->Release();
     CloseHandle(fenceEvent);   // EventはCOMではないのでReleaseではなくCloseHandle
     fence->Release();
+    srvDescriptorHeap->Release();
     rtvDescriptorHeap->Release();
     swapChainResources[0]->Release();
     swapChainResources[1]->Release();
