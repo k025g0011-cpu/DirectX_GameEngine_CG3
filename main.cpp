@@ -1120,6 +1120,68 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
     // ════════════════════════════════════════
+    // TransformationMatrix用のResourceを作る
+    // Matrix4x4 1つ分のサイズを用意する
+    // ════════════════════════════════════════
+    ID3D12Resource* transformationMatrixResource = CreateBufferResource(device, sizeof(Matrix4x4));
+    // データを書き込む
+    Matrix4x4* transformationMatrixData = nullptr;
+    // 書き込むためのアドレスを取得
+    transformationMatrixResource->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixData));
+    // 単位行列を書きこんでおく
+    *transformationMatrixData = MakeIdentity4x4();
+
+    // Transform変数を作る
+    Transform transform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
+    // カメラのTransformを作る。z = -5 の位置で z+ 方向を向いているカメラ
+    Transform cameraTransform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -5.0f} };
+
+    // ════════════════════════════════════════
+    // Sprite用の頂点リソースとVBVを作る
+    // 矩形 = 三角形2枚 = 6頂点。3Dの三角形とは別に用意する
+    // ════════════════════════════════════════
+    // Sprite用の頂点リソースを作る
+    ID3D12Resource* vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 6);
+
+    // 頂点バッファビューを作成する
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
+    // リソースの先頭のアドレスから使う
+    vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
+    // 使用するリソースのサイズは頂点6つ分のサイズ
+    vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 6;
+    // 1頂点あたりのサイズ
+    vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
+
+    // 頂点データを書き込む（座標はピクセル単位・左上原点・y下向き）
+    VertexData* vertexDataSprite = nullptr;
+    vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSprite));
+    // 1枚目の三角形
+    vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f, 1.0f };// 左下
+    vertexDataSprite[0].texcoord = { 0.0f, 1.0f };
+    vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f, 1.0f };// 左上
+    vertexDataSprite[1].texcoord = { 0.0f, 0.0f };
+    vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f, 1.0f };// 右下
+    vertexDataSprite[2].texcoord = { 1.0f, 1.0f };
+    // 2枚目の三角形
+    vertexDataSprite[3].position = { 0.0f, 0.0f, 0.0f, 1.0f };// 左上
+    vertexDataSprite[3].texcoord = { 0.0f, 0.0f };
+    vertexDataSprite[4].position = { 640.0f, 0.0f, 0.0f, 1.0f };// 右上
+    vertexDataSprite[4].texcoord = { 1.0f, 0.0f };
+    vertexDataSprite[5].position = { 640.0f, 360.0f, 0.0f, 1.0f };// 右下
+    vertexDataSprite[5].texcoord = { 1.0f, 1.0f };
+
+
+    // ════════════════════════════════════════
+    // Sprite用のTransformationMatrixのResourceとTransformを作る
+    // ════════════════════════════════════════
+    ID3D12Resource* transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(Matrix4x4));
+    Matrix4x4* transformationMatrixDataSprite = nullptr;
+    transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
+    *transformationMatrixDataSprite = MakeIdentity4x4();
+    // CPUで動かす用のTransform
+    Transform transformSprite{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
+
+    // ════════════════════════════════════════
     // Material用のResourceを作る
     // 今回はcolor1つ分のサイズを用意する
     // ════════════════════════════════════════
@@ -1166,6 +1228,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     hr = commandList->Reset(commandAllocator, nullptr);
     assert(SUCCEEDED(hr));
     intermediateResource->Release(); // VRAM上のリソースへ転送が完了したので <CPU> と <VRAM上リソース> の橋となっていた中間リソースはもういらない
+    
     // ════════════════════════════════════════
     // Texture用のSRVを作る
     // srvDescriptorHeapの2番目(index 1)に作成する。先頭(index 0)はImGuiのフォントが使用
@@ -1188,36 +1251,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     // SRVの生成
     device->CreateShaderResourceView(textureResource, &srvDesc, textureSrvHandleCPU);
 
-    // ════════════════════════════════════════
-    // TransformationMatrix用のResourceを作る
-    // Matrix4x4 1つ分のサイズを用意する
-    // ════════════════════════════════════════
-    ID3D12Resource* wvpResource = CreateBufferResource(device, sizeof(Matrix4x4));
-    // データを書き込む
-    Matrix4x4* wvpData = nullptr;
-    // 書き込むためのアドレスを取得
-    wvpResource->Map(0, nullptr, reinterpret_cast<void**>(&wvpData));
-    // 単位行列を書きこんでおく
-    *wvpData = MakeIdentity4x4();
-
-    // Transform変数を作る
-    Transform transform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
-    // カメラのTransformを作る。z = -5 の位置で z+ 方向を向いているカメラ
-    Transform cameraTransform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -5.0f} };
-#pragma region  MyRegion
-    /*
-    ??? なぜ行列を直接持たないのか ???
-
-    ＞＞＞行列（16個の数値）を直接持っていると、「今どれくらい回転しているか」が人間には読めません。
-
-    cpp
-    // ✕ 行列を直接持つ
-    Matrix4x4 world;   // 中身を見ても回転量が分からない。少しだけ回したい、もできない
-
-    // ○ Transform を持つ
-    transform.rotate.y += 0.03f;   // 「Y軸に0.03ラジアン足す」と読める
-    */
-#pragma endregion
     // ════════════════════════════════════════
     // ViewportとScissor
     // Viewport: NDCをウィンドウのどこに写すか / Scissor: 描画してよい範囲の切り抜き
@@ -1285,6 +1318,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             // 三角形の回転
             // ────────────────────────────────────────
             transform.rotate.y += 0.03f;
+
+            // ────────────────────────────────────────
+            // レンダリング（クリップ空間まで変換）（３D）
+            // ────────────────────────────────────────
             Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate); // 拡縮、回転、移動
             Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate); // ワールド基準で、カメラはどこにいるか
             Matrix4x4 viewMatrix = Inverse(cameraMatrix);  // カメラ基準で、ワールドはどこにあるか(ワールドをカメラに合わせる）
@@ -1294,8 +1331,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
               結果          ： ずらした後の座標 ＝ カメラ基準の座標
             */
 
-            Matrix4x4 projectionMatrix = MakePerspectiveMatrix(0.45f,
-                float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f);
+            Matrix4x4 projectionMatrix = MakePerspectiveMatrix(0.45f,float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f); // 透視投影 で遠いほど小さく見える処理を加え、２D上でも奥行を出す（ 視錐台切り取りカメラ ）
             /*
             * MakePerspectiveMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
                                        ↑         ↑            ↑      ↑
@@ -1308,8 +1344,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
                 nearClip	    0.1	                    これより近いものは映さない
                 farClip	        100.0	                これより遠いものは映さない
             */
-            *wvpData = MakeWVPMatrix(worldMatrix, viewMatrix, projectionMatrix); // これらの行列を掛け合わせる
+            *transformationMatrixData = MakeWVPMatrix(worldMatrix, viewMatrix, projectionMatrix); // これらの行列を掛け合わせる
 
+            // ────────────────────────────────────────
+            // レンダリング（クリップ空間まで変換）（３D）
+            // ────────────────────────────────────────
+            // Sprite用のWorldViewProjectionMatrixを作る
+            Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
+            Matrix4x4 viewMatrixSprite = MakeIdentity4x4();   // 2D用カメラ（原点・動かさない）
+            Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f); // 平行投影 で完全にカメラから平行に映す処理（ 直方体カメラ＜0〜1280 × 0〜720 × 0〜100＞）
+            *transformationMatrixDataSprite = MakeWVPMatrix(worldMatrixSprite, viewMatrixSprite, projectionMatrixSprite);
 #ifdef USE_IMGUI
             // 開発用UIの処理
             ImGui::ShowDemoWindow();
@@ -1386,16 +1430,24 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
             第二引数のリソース本体のアドレスを送るぜよ                           （ここにコードで指定した色データが入っており、シェーダのmain関数へ）
             */
 #pragma endregion
-            commandList->SetGraphicsRootConstantBufferView(1, wvpResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、wvpResourceアドレスを渡す
+            commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、TransformationMatrixResourceアドレスを渡す
 
             // SRVのDescriptorTableの先頭を設定。2はrootParameter[2]である。
             commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
 
             // 描画！(DrawCall/ドローコール)
-            // VBVの先頭から6頂点を読み、TRIANGLELISTなので3頂点ずつ区切って三角形2枚として描画する
-            // 引数：(1インスタンスあたりの頂点数, インスタンス数, 開始頂点の番号, 開始インスタンスの番号)
-            // ※ 6は三角形の数ではなく頂点の数。インスタンスについては今後
+            /*
+            VBVの先頭から6頂点を読み、TRIANGLELISTなので3頂点ずつ区切って三角形2枚として描画する
+            引数：(1インスタンスあたりの頂点数, インスタンス数, 開始頂点の番号, 開始インスタンスの番号)
+            ※ 6は三角形の数ではなく頂点の数。インスタンスについては今後
+            */
             commandList->DrawInstanced(6, 1, 0, 0);
+
+            commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);   // VBVを設定
+            commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、transformationMatrixResourceSpriteアドレスを渡す
+            commandList->DrawInstanced(6, 1, 0, 0);
+
+
 #pragma region  MyRegion
             /*
             ＜引数＞	                  ＜値＞	    ＜意味＞
@@ -1458,9 +1510,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     }
 
     // ════════════════════════════════════════
-    // 解放処理(生成と逆の順番で解放する)
-    // ════════════════════════════════════════
-    // ─── ImGui（最後に作ったもの。device・srvDescriptorHeapを使っているので、それらより先に）───
+ // 解放処理(生成と逆の順番で解放する)
+ // ════════════════════════════════════════
+ // ─── ImGui（最後に作ったもの。device・srvDescriptorHeapを使っているので、それらより先に）───
 #ifdef USE_IMGUI
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
@@ -1468,9 +1520,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 #endif
 
     // ─── 描画に使うリソース ───
-    wvpResource->Release();
     textureResource->Release();
     materialResource->Release();
+    transformationMatrixResourceSprite->Release();
+    vertexResourceSprite->Release();
+    transformationMatrixResource->Release();
     vertexResource->Release();
 
     // ─── PSO・シェーダー・RootSignature ───
@@ -1483,7 +1537,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
     }
     signatureBlob->Release();
 
-    // ─── DXC（追加） ───
+    // ─── DXC ───
     includeHandler->Release();
     dxcCompiler->Release();
     dxcUtils->Release();
