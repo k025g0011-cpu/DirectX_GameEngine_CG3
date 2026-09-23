@@ -3,9 +3,18 @@
 struct Material
 {
     float32_t4 color;
+    int32_t enableLighting;
+};
+
+struct DirectionalLight
+{
+    float32_t4 color;
+    float32_t3 direction;
+    float intensity;
 };
 
 ConstantBuffer<Material> gMaterial : register(b0);
+ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
 Texture2D<float32_t4> gTexture : register(t0); // SRVのregisterはt
 SamplerState gSampler : register(s0); // Samplerのregisterはs
 
@@ -18,6 +27,19 @@ PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
     float32_t4 textureColor = gTexture.Sample(gSampler, input.texcoord); // Textureをどのように（Sampler）、**どの部分を（texcoord）**読むか
-    output.color = gMaterial.color * textureColor;
+    if (gMaterial.enableLighting != 0)
+    { // Lightingする場合
+        float NdotL = dot(normalize(input.normal), -gDirectionalLight.direction);
+        
+        // 片方を消すことで切り替え
+        float cos = pow(NdotL * 0.5f + 0.5f, 2.0f); // Half Lambert
+        //float cos = saturate(NdotL);                 // Lambert
+        
+        output.color = gMaterial.color * textureColor * gDirectionalLight.color * cos * gDirectionalLight.intensity;
+    }
+    else
+    { // Lightingしない場合
+        output.color = gMaterial.color * textureColor;
+    }
     return output;
 }
