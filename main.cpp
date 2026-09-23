@@ -38,30 +38,33 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #pragma comment(lib, "dxcompiler.lib")
 
 
-// 1頂点の持つデータ（36バイト)
-struct VertexData {
+// 1頂点の持つデータ
+struct VertexData {	  // 全体＜36＞バイト
 	Vector4 position; // 座標       (float<4> * 4) = 16バイト
 	Vector2 texcoord; // UV座標     (float<2> * 2) = 8バイト
 	Vector3 normal;   // 頂点の向き  (float<3> * 3) = 12バイト
 };
 
 // 座標変換用の行列（VSに渡す定数）
-struct TransformationMatrix {
+struct TransformationMatrix { // 全体＜128＞バイト
 	Matrix4x4 WVP;    // クリップ空間へ変換する行列
 	Matrix4x4 World;  // ワールド空間へ変換する行列（法線の変換に使う）
 };
 
+
 // オブジェクトごとに持つマテリアル情報
-struct Material {
-	Vector4 color;	        // マテリアル色　(float<4> * 4) = 16バイト
+struct Material {			// 全体＜96＞バイト
+	Vector4 color;			// マテリアル色　(float<4> * 4) = 16バイト
 	int32_t enableLighting; // 有効or無効					　　 ４バイト
+	float padding[3];		// hlsl側の自動空白に合わせる　　　 12バイト
+	Matrix4x4 uvTransform;  // UV座標　　　　　　　　　　　　　　64バイト
 };
 
-// 平行光源（DirectionalLight）
-struct DirectionalLight {
-	Vector4 color;		// ライト色　　　(float<4> * 4) = 16バイト
-	Vector3 direction;  // ライトの向き　(float<3> * 3) = 12バイト
-	float intensity;    // 輝度							４バイト
+// 平行光源（DirectionalLight） (
+struct DirectionalLight {// 全体＜32＞バイト
+	Vector4 color;		 // ライト色　　　(float<4> * 4) = 16バイト
+	Vector3 direction;   // ライトの向き　(float<3> * 3) = 12バイト
+	float intensity;     // 輝度							４バイト
 };
 
 
@@ -1366,7 +1369,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 今回は赤を書き込んでみる
 	sphereMaterialData->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };   // 白
 	sphereMaterialData->enableLighting = true;                      // Lightingしない
+	sphereMaterialData->uvTransform = MakeIdentity4x4();
 
+	Transform uvTransformSphere{ // UV移動用
+	{ 1.0f, 1.0f, 1.0f },
+	{ 0.0f, 0.0f, 0.0f },
+	{ 0.0f, 0.0f, 0.0f },
+	};
 	// -----------------------------------------
 	// スプライト用マテリアル
 	// -----------------------------------------
@@ -1378,6 +1387,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 今回は赤を書き込んでみる
 	spriteMaterialData->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };   // 白
 	spriteMaterialData->enableLighting = false;                      // Lightingしない
+	spriteMaterialData->uvTransform = MakeIdentity4x4();
+
+	Transform uvTransformSprite{ // UV移動用
+	{ 1.0f, 1.0f, 1.0f },
+	{ 0.0f, 0.0f, 0.0f },
+	{ 0.0f, 0.0f, 0.0f },
+	};
 	// ════════════════════════════════════════
 	// Texture用のResourceを作る
 	// Textureを読み込み、VRAM上のテクスチャに転送する
@@ -1542,6 +1558,17 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui::ColorEdit4("light color", &directionalLightData->color.x);
 			directionalLightData->direction = Normalize(directionalLightData->direction);   // 毎フレーム正規化
 			ImGui::Checkbox("useMonsterBall", &useMonsterBall);
+
+			// ────────────────────────────────────────
+			// SphereとSpriteのUVTransform
+			// UV座標はxy平面なので、移動・拡縮はxyの2成分、回転はz軸まわりのみ
+			// ────────────────────────────────────────
+			ImGui::DragFloat2("SpriteUVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
+			ImGui::DragFloat2("SpriteUVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
+			ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite.rotate.z);
+			ImGui::DragFloat2("SphereUVTranslate", &uvTransformSphere.translate.x, 0.01f, -10.0f, 10.0f);
+			ImGui::DragFloat2("SphereUVScale", &uvTransformSphere.scale.x, 0.01f, -10.0f, 10.0f);
+			ImGui::SliderAngle("SphereUVRotate", &uvTransformSphere.rotate.z);
 			ImGui::End();
 #endif
 
@@ -1574,6 +1601,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			transformationMatrixDataSphere->World = worldMatrixSphere;
 
 			// ────────────────────────────────────────
+			// ＜球体＞　UVTransform行列を作る
+			// 座標変換の基本どおり Scale → Rotate → Translate (SRT) の順に掛ける
+			// ────────────────────────────────────────
+			Matrix4x4 uvTransformMatrixSphere = MakeAffineMatrix(uvTransformSphere.scale, uvTransformSphere.rotate, uvTransformSphere.translate);
+			sphereMaterialData->uvTransform = uvTransformMatrixSphere;
+
+			// ────────────────────────────────────────
 			// ＜スプライト＞　レンダ（クリップ空間まで変換）（２D）
 			// ────────────────────────────────────────
 			// Sprite用のWorldViewProjectionMatrixを作る
@@ -1583,6 +1617,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			transformationMatrixDataSprite->WVP = MakeWVPMatrix(worldMatrixSprite, viewMatrixSprite, projectionMatrixSprite);
 			transformationMatrixDataSprite->World = worldMatrixSprite;
 
+			// ────────────────────────────────────────
+			// ＜スプライト＞　UVTransform行列を作る
+			// 座標変換の基本どおり Scale → Rotate → Translate (SRT) の順に掛ける
+			// ────────────────────────────────────────
+			Matrix4x4 uvTransformMatrixSprite = MakeAffineMatrix(uvTransformSprite.scale, uvTransformSprite.rotate, uvTransformSprite.translate);
+			spriteMaterialData->uvTransform = uvTransformMatrixSprite;
 #ifdef USE_IMGUI
 			// 開発用UIの処理
 			ImGui::ShowDemoWindow();
