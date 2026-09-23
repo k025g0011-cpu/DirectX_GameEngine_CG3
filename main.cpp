@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <cmath> 
 #include <format>
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -1130,98 +1131,116 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	assert(SUCCEEDED(hr));
 
 
-	// ════════════════════════════════════════
-	// 球の分割数と頂点数
-	// 基準点1つにつき四角形1枚(三角形2枚=6頂点)。基準点は 縦(緯度)×横(経度) 個
-	// ════════════════════════════════════════
-	const uint32_t kSubdivision = 16;                                      // 分割数（縦横同じ）
-	const uint32_t kSphereVertexCount = kSubdivision * kSubdivision * 6;     // 16×16×6 = 1536
+	// ════════════════════════════════════════════════════
+	// 球の分割数・頂点数・インデックス数
+	// ════════════════════════════════════════════════════
+	const uint32_t kSubdivision = 16;                                              // 分割数（緯度・経度とも）
+	const uint32_t kSphereVertexCount = (kSubdivision + 1) * (kSubdivision + 1);   // 格子点の数 17×17 = 289
+	const uint32_t kSphereIndexCount = kSubdivision * kSubdivision * 6;            // マス数×6 = 16×16×6 = 1536
 
-	// ════════════════════════════════════════
-	// VertexResourceを生成する（現在は 球体 モデル用＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞＞
-	// 頂点データを置くためのGPUから読めるメモリ(箱)を確保する
-	// ════════════════════════════════════════
-	// 実際に頂点リソースを作る
-	ID3D12Resource* vertexResourceSphere = CreateBufferResource(device, sizeof(VertexData) * kSphereVertexCount); // これから入れるデータのサイズを考えてサイズ指定しようね
-	/*
-	三角形だから   ＜＜＜sizeof(VertexData)　ｘ３＞＞＞
-		↓
-	三角形を２枚描画   ＜＜＜sizeof(VertexData)　ｘ６＞＞＞
-	*/
+	// ════════════════════════════════════════════════════
+	// 球の VertexResource を生成する
+	// ════════════════════════════════════════════════════
+	ID3D12Resource* vertexResourceSphere = CreateBufferResource(device, sizeof(VertexData) * kSphereVertexCount);
 
-
-	// ════════════════════════════════════════
-	// VertexBufferViewを作成する
-	// 頂点リソースの読み方を伝えるメモ。DescriptorHeapには置かない >>>> 描画時にコマンドリストへ直接渡します
-	// ════════════════════════════════════════
+	// ════════════════════════════════════════════════════
+	// 球の VertexBufferView を作成する
+	// ════════════════════════════════════════════════════
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSphere{};
 	// リソースの先頭のアドレスから使う
 	vertexBufferViewSphere.BufferLocation = vertexResourceSphere->GetGPUVirtualAddress();
-	// 使用するリソースのサイズは頂点3つ分のサイズ
+	// 使用するリソースのサイズは頂点289個分のサイズ
 	vertexBufferViewSphere.SizeInBytes = sizeof(VertexData) * kSphereVertexCount;
-	// 1頂点あたりのサイズ
+	// 1頂点あたりのサイズ（この値でindexからアドレスを計算する）
 	vertexBufferViewSphere.StrideInBytes = sizeof(VertexData);
 
+	// ════════════════════════════════════════════════════
+	// 球の IndexResource を生成する
+	// ════════════════════════════════════════════════════
+	ID3D12Resource* indexResourceSphere = CreateBufferResource(device, sizeof(uint32_t) * kSphereIndexCount);
 
-	// ════════════════════════════════════════
-	// Resourceにデータを書き込む
-	// ════════════════════════════════════════
+	// ════════════════════════════════════════════════════
+	// 球の IndexBufferView を作成する
+	// ════════════════════════════════════════════════════
+	D3D12_INDEX_BUFFER_VIEW indexBufferViewSphere{};
+	// リソースの先頭のアドレスから使う
+	indexBufferViewSphere.BufferLocation = indexResourceSphere->GetGPUVirtualAddress();
+	// 使用するリソースのサイズはインデックス1536個分のサイズ
+	indexBufferViewSphere.SizeInBytes = sizeof(uint32_t) * kSphereIndexCount;
+	// インデックス1個の型。uint32_t なので R32_UINT（Strideは不要）
+	indexBufferViewSphere.Format = DXGI_FORMAT_R32_UINT;
 
-	/*
-	・texcoordは三角形のローカル座標みたいなもの
-	・大体はモデルのUV座標から読み取る
-	・y座標が反転してる
-		 y = 1.0f -> 0.0f
-	*/
-	// 頂点リソースにデータを書き込む
+
+	// ════════════════════════════════════════════════════
+	// 円周率
+	// ════════════════════════════════════════════════════
+	const float kPi = 3.14159265358979323846f;
+
+	// ════════════════════════════════════════════════════
+	// 球の頂点データを書き込む（格子点 17×17 = 289個）
+	// ════════════════════════════════════════════════════
 	VertexData* vertexDataSphere = nullptr;
-	// 書き込むためのアドレスを取得
-	vertexResourceSphere->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSphere)); // CPUからでもデータを書ける住所をvertexDataに受け取る
+	vertexResourceSphere->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSphere));
 
-	const float pi = std::numbers::pi_v<float>;
-	const float kLonEvery = pi * 2.0f / float(kSubdivision);   // 経度1つ分の角度 φd（一周 2π を分割）
-	const float kLatEvery = pi / float(kSubdivision);          // 緯度1つ分の角度 θd（下端〜上端 π を分割）
+	const float kLonEvery = 2.0f * kPi / float(kSubdivision);   // 経度1つ分の角度 φd
+	const float kLatEvery = kPi / float(kSubdivision);          // 緯度1つ分の角度 θd
 
-	// 緯度の方向に分割（下から上へ）
-	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {
-		float lat = -pi / 2.0f + kLatEvery * float(latIndex);   // θ：-π/2（真下）から始める
+	// 緯度方向に分割　-π/2 ～ π/2
+	for (uint32_t latIndex = 0; latIndex <= kSubdivision; ++latIndex) {       // <= （端の点も作るので17周）
+		float lat = -kPi / 2.0f + kLatEvery * float(latIndex);                // 現在の緯度 θ
 
-		// 経度の方向に分割（ぐるっと一周）
-		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {
-			float lon = kLonEvery * float(lonIndex);             // φ
-			uint32_t start = (latIndex * kSubdivision + lonIndex) * 6;   // この四角形を書き込む先頭
+		// 経度方向に分割　0 ～ 2π
+		for (uint32_t lonIndex = 0; lonIndex <= kSubdivision; ++lonIndex) {   // <= （一周を閉じるので17周）
+			float lon = kLonEvery * float(lonIndex);                          // 現在の経度 φ
 
-			// 4点の位置（半径1の球）
-			Vector4 a = { std::cos(lat) * std::cos(lon),                         std::sin(lat),             std::cos(lat) * std::sin(lon),                         1.0f };
-			Vector4 b = { std::cos(lat + kLatEvery) * std::cos(lon),             std::sin(lat + kLatEvery), std::cos(lat + kLatEvery) * std::sin(lon),             1.0f };
-			Vector4 c = { std::cos(lat) * std::cos(lon + kLonEvery),             std::sin(lat),             std::cos(lat) * std::sin(lon + kLonEvery),             1.0f };
-			Vector4 d = { std::cos(lat + kLatEvery) * std::cos(lon + kLonEvery), std::sin(lat + kLatEvery), std::cos(lat + kLatEvery) * std::sin(lon + kLonEvery), 1.0f };
+			// この格子点の番号。横に (kSubdivision+1) 個ならんでいる
+			uint32_t index = latIndex * (kSubdivision + 1) + lonIndex;
 
-			// 4点のUV（横が一周でu:0→1、上が v=0・下が v=1）
-			float u0 = float(lonIndex) / float(kSubdivision);
-			float u1 = float(lonIndex + 1) / float(kSubdivision);
-			float v0 = 1.0f - float(latIndex) / float(kSubdivision);       // a・c の段
-			float v1 = 1.0f - float(latIndex + 1) / float(kSubdivision);   // b・d の段（1段上）
-			Vector2 uvA = { u0, v0 };
-			Vector2 uvB = { u0, v1 };
-			Vector2 uvC = { u1, v0 };
-			Vector2 uvD = { u1, v1 };
-			Vector3 nA = { a.x, a.y, a.z };
-			Vector3 nB = { b.x, b.y, b.z };
-			Vector3 nC = { c.x, c.y, c.z };
-			Vector3 nD = { d.x, d.y, d.z };
+			// 単位球（半径1）上の座標
+			vertexDataSphere[index].position.x = std::cos(lat) * std::cos(lon);
+			vertexDataSphere[index].position.y = std::sin(lat);
+			vertexDataSphere[index].position.z = std::cos(lat) * std::sin(lon);
+			vertexDataSphere[index].position.w = 1.0f;
 
-			// 1枚目の三角形 abc
-			vertexDataSphere[start + 0] = { a, uvA ,nA };
-			vertexDataSphere[start + 1] = { b, uvB ,nB };
-			vertexDataSphere[start + 2] = { c, uvC ,nC };
-			// 2枚目の三角形 cbd
-			vertexDataSphere[start + 3] = { c, uvC ,nC };
-			vertexDataSphere[start + 4] = { b, uvB ,nB };
-			vertexDataSphere[start + 5] = { d, uvD ,nD };
+			// uv。uは経度が一周で0→1、vは緯度が下から上で1→0
+			vertexDataSphere[index].texcoord.x = float(lonIndex) / float(kSubdivision);
+			vertexDataSphere[index].texcoord.y = 1.0f - float(latIndex) / float(kSubdivision);
+
+			// 単位球なので中心から表面へのベクトル＝位置。それがそのまま法線になる
+			vertexDataSphere[index].normal.x = vertexDataSphere[index].position.x;
+			vertexDataSphere[index].normal.y = vertexDataSphere[index].position.y;
+			vertexDataSphere[index].normal.z = vertexDataSphere[index].position.z;
 		}
 	}
 
+	// ════════════════════════════════════════════════════
+	// 球のインデックスデータを書き込む（マス 16×16 × 6個 = 1536個）
+	// ════════════════════════════════════════════════════
+	uint32_t* indexDataSphere = nullptr;
+	indexResourceSphere->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSphere));
+
+	for (uint32_t latIndex = 0; latIndex < kSubdivision; ++latIndex) {        // ★ < （マスは16個なので16周）
+		for (uint32_t lonIndex = 0; lonIndex < kSubdivision; ++lonIndex) {    // ★ < （マスは16個なので16周）
+
+			// このマスが書き込むインデックス配列の開始位置（1マスにつき6個書く）
+			uint32_t start = (latIndex * kSubdivision + lonIndex) * 6;
+
+			// このマスの四隅の「格子点の番号」。頂点データではなく番号であることに注意
+			uint32_t a = (latIndex + 0) * (kSubdivision + 1) + (lonIndex + 0);   // 左下
+			uint32_t b = (latIndex + 1) * (kSubdivision + 1) + (lonIndex + 0);   // 左上
+			uint32_t c = (latIndex + 0) * (kSubdivision + 1) + (lonIndex + 1);   // 右下
+			uint32_t d = (latIndex + 1) * (kSubdivision + 1) + (lonIndex + 1);   // 右上
+
+			// 三角形1枚目　a → b → c
+			indexDataSphere[start + 0] = a;
+			indexDataSphere[start + 1] = b;
+			indexDataSphere[start + 2] = c;
+			// 三角形2枚目　c → b → d
+			indexDataSphere[start + 3] = c;
+			indexDataSphere[start + 4] = b;
+			indexDataSphere[start + 5] = d;
+		}
+	}
 
 
 	// ════════════════════════════════════════
@@ -1242,45 +1261,72 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// カメラのTransformを作る。z = -5 の位置で z+ 方向を向いているカメラ
 	Transform cameraTransform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -5.0f} };
 
-	// ════════════════════════════════════════
-	// Sprite用の頂点リソースとVBVを作る
-	// 矩形 = 三角形2枚 = 6頂点。3Dの三角形とは別に用意する
-	// ════════════════════════════════════════
-	// Sprite用の頂点リソースを作る
-	ID3D12Resource* vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 6);
 
+	// ════════════════════════════════════════════════════
+	// スプライトの VertexResource を生成する
+	// ════════════════════════════════════════════════════
+	ID3D12Resource* vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
+
+	// ════════════════════════════════════════════════════
+	// スプライトの VertexBufferView を作成する
+	// ════════════════════════════════════════════════════
 	// 頂点バッファビューを作成する
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
 	// リソースの先頭のアドレスから使う
 	vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
 	// 使用するリソースのサイズは頂点6つ分のサイズ
-	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 6;
+	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 4;
 	// 1頂点あたりのサイズ
 	vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
 
-	// 頂点データを書き込む（座標はピクセル単位・左上原点・y下向き）
+
+	// ════════════════════════════════════════════════════
+	// スプライトの IndexResource を生成する
+	// ════════════════════════════════════════════════════
+	ID3D12Resource* indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
+
+	// ════════════════════════════════════════════════════
+	// スプライトの indexBufferView を生成する
+	// ════════════════════════════════════════════════════
+	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
+	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
+	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6;
+	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;   // インデックス1つが32bit整数
+
+
+	// ════════════════════════════════════════════════════
+	// スプライトの頂点データを書き込む
+	// ════════════════════════════════════════════════════
 	VertexData* vertexDataSprite = nullptr;
 	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSprite));
-	// 1枚目の三角形
-	vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f, 1.0f };// 左下
+
+	// [0] 左下
+	vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f, 1.0f };
 	vertexDataSprite[0].texcoord = { 0.0f, 1.0f };
 	vertexDataSprite[0].normal = { 0.0f, 0.0f, -1.0f };
-	vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f, 1.0f };// 左上
+	// [1] 左上
+	vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f, 1.0f };
 	vertexDataSprite[1].texcoord = { 0.0f, 0.0f };
 	vertexDataSprite[1].normal = { 0.0f, 0.0f, -1.0f };
-	vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f, 1.0f };// 右下
+	// [2] 右下
+	vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f, 1.0f };
 	vertexDataSprite[2].texcoord = { 1.0f, 1.0f };
 	vertexDataSprite[2].normal = { 0.0f, 0.0f, -1.0f };
-	// 2枚目の三角形
-	vertexDataSprite[3].position = { 0.0f, 0.0f, 0.0f, 1.0f };// 左上
-	vertexDataSprite[3].texcoord = { 0.0f, 0.0f };
+	// [3] 右上
+	vertexDataSprite[3].position = { 640.0f, 0.0f, 0.0f, 1.0f };
+	vertexDataSprite[3].texcoord = { 1.0f, 0.0f };
 	vertexDataSprite[3].normal = { 0.0f, 0.0f, -1.0f };
-	vertexDataSprite[4].position = { 640.0f, 0.0f, 0.0f, 1.0f };// 右上
-	vertexDataSprite[4].texcoord = { 1.0f, 0.0f };
-	vertexDataSprite[4].normal = { 0.0f, 0.0f, -1.0f };
-	vertexDataSprite[5].position = { 640.0f, 360.0f, 0.0f, 1.0f };// 右下
-	vertexDataSprite[5].texcoord = { 1.0f, 1.0f };
-	vertexDataSprite[5].normal = { 0.0f, 0.0f, -1.0f };
+
+	// ２か所の頂点が重なってるのでデータを再利用することになる
+
+
+	// ════════════════════════════════════════════════════
+	// スプライトのインデックスデータを書き込む
+	// ════════════════════════════════════════════════════
+	uint32_t* indexDataSprite = nullptr;
+	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSprite));
+	indexDataSprite[0] = 0;  indexDataSprite[1] = 1;  indexDataSprite[2] = 2;   // 1枚目：左下→左上→右下
+	indexDataSprite[3] = 1;  indexDataSprite[4] = 3;  indexDataSprite[5] = 2;   // 2枚目：左上→右上→右下
 
 
 	// ════════════════════════════════════════
@@ -1535,7 +1581,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			Matrix4x4 viewMatrixSprite = MakeIdentity4x4();   // 2D用カメラ（原点・動かさない）
 			Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(kClientWidth), float(kClientHeight), 0.0f, 100.0f); // 平行投影 で完全にカメラから平行に映す処理（ 直方体カメラ＜0〜1280 × 0〜720 × 0〜100＞）
 			transformationMatrixDataSprite->WVP = MakeWVPMatrix(worldMatrixSprite, viewMatrixSprite, projectionMatrixSprite);
-			transformationMatrixDataSprite->World = worldMatrixSprite;   
+			transformationMatrixDataSprite->World = worldMatrixSprite;
 
 #ifdef USE_IMGUI
 			// 開発用UIの処理
@@ -1618,11 +1664,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			commandList->SetGraphicsRootConstantBufferView(0, sphereMaterialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、sphereMaterialResourceアドレスを渡す
 			commandList->SetGraphicsRootDescriptorTable(2, useMonsterBall ? textureSrvHandleGPU2 : textureSrvHandleGPU); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);   // VBVを設定
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSphere);   // 球体用VBVを設定
+			commandList->IASetIndexBuffer(&indexBufferViewSphere);			  // 球体用IBVを設定
 			commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSphere->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、TransformationMatrixResourceSphereアドレスを渡す
 
 			// 描画！(DrawCall/ドローコール)
-			commandList->DrawInstanced(kSphereVertexCount, 1, 0, 0); //　頂点数を変数に
+			/*
+		    第1引数：読むインデックスの数。6個 ÷ 3 = 三角形2枚 = 四角形1枚
+			第2引数：インスタンス数。同じ形を何体描くか。今は1体
+			第3引数：インデックスバッファの何番目から読むか。先頭からなので0
+			第4引数：インデックスの値に足すオフセット。頂点バッファの先頭から使うので0
+			第5引数：SV_InstanceID の開始番号。インスタンシングしないので0
+			*/
+			commandList->DrawIndexedInstanced(kSphereIndexCount, 1, 0, 0, 0);
 
 			// ────────────────────────────────────────
 			// スプライトを描画する
@@ -1630,12 +1684,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 			commandList->SetGraphicsRootConstantBufferView(0, spriteMaterialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、spriteMaterialResourceアドレスを渡す
 			commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);   // VBVを設定
+			commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);   // スプライト用VBVを設定
+			commandList->IASetIndexBuffer(&indexBufferViewSprite);            // スプライト用IBVを設定
 			commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、transformationMatrixResourceSpriteアドレスを渡す
 
 			// 描画！(DrawCall/ドローコール)
-			commandList->DrawInstanced(6, 1, 0, 0);
 
+			commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);                   // DrawInstanced → DrawIndexedInstanced
 
 #pragma region  MyRegion
 			/*
@@ -1699,9 +1754,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	}
 
 	// ════════════════════════════════════════
- // 解放処理(生成と逆の順番で解放する)
- // ════════════════════════════════════════
- // ─── ImGui（最後に作ったもの。device・srvDescriptorHeapを使っているので、それらより先に）───
+	// 解放処理(生成と逆の順番で解放する)
+	// ════════════════════════════════════════
+	// ─── ImGui（最後に作ったもの。device・srvDescriptorHeapを使っているので、それらより先に）───
 #ifdef USE_IMGUI
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
@@ -1715,8 +1770,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	sphereMaterialResource->Release();
 	directionalLightResource->Release();
 	transformationMatrixResourceSprite->Release();
+	indexResourceSprite->Release();
 	vertexResourceSprite->Release();
 	transformationMatrixResourceSphere->Release();
+	indexResourceSphere->Release();            // ★ 追加
 	vertexResourceSphere->Release();
 
 	// ─── PSO・シェーダー・RootSignature ───
@@ -1757,7 +1814,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ─── Device・デバッグ・Adapter・Factory ───
 	device->Release();
 #ifdef _DEBUG
-	debugController->Release();
+	if (debugController) {                     // ★ nullptrガードを追加
+		debugController->Release();
+	}
 #endif
 	useAdapter->Release();
 	dxgiFactory->Release();
