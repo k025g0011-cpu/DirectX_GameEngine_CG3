@@ -15,6 +15,7 @@
 #include <vector>
 #include <numbers>
 #include "MathUtility.h"
+#include "Input.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -35,11 +36,17 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 // ComPtr（COMオブジェクトの参照カウントを自動で管理してくれるクラス）用
 #include <wrl.h>
 
+// キーボード入力用（DirectInput）
+// ※ DIRECTINPUT_VERSION は必ず dinput.h より前に定義すること
+#define DIRECTINPUT_VERSION 0x0800   // DirectInput 8.00 を使う
+#include <dinput.h>
+
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "Dbghelp.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
+#pragma comment(lib, "dinput8.lib")   
 
 // ════════════════════════════════════════
 // Microsoft::WRL::ComPtr は毎回書くと長いので、ComPtr と短縮して使えるようにする
@@ -186,6 +193,33 @@ void Log(std::ostream& os, const std::wstring& message) {
 	// wstringからstringに変換して、
 	// stringの方のLog関数を呼ぶ
 	Log(os, ConvertString(message));
+}
+
+//════════════════════════════════════════════════════
+// キー入力判定ヘルパー
+//   key    : 今フレームの状態
+//   preKey : 前フレームの状態
+//   keyNumber : DIK_〜 (uint8_tなので0〜255に制限される)
+//════════════════════════════════════════════════════
+
+// 押している状態か
+bool PushKey(const BYTE* key, uint8_t keyNumber) {
+	return key[keyNumber] != 0;
+}
+
+// 離している状態か
+bool ReleaseKey(const BYTE* key, uint8_t keyNumber) {
+	return key[keyNumber] == 0;
+}
+
+// 押した瞬間か（前:OFF → 今:ON）
+bool TriggerKey(const BYTE* key, const BYTE* preKey, uint8_t keyNumber) {
+	return key[keyNumber] != 0 && preKey[keyNumber] == 0;
+}
+
+// 離した瞬間か（前:ON → 今:OFF）
+bool ReleaseTriggerKey(const BYTE* key, const BYTE* preKey, uint8_t keyNumber) {
+	return key[keyNumber] == 0 && preKey[keyNumber] != 0;
 }
 
 // ════════════════════════════════════════
@@ -1465,7 +1499,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 1頂点あたりのサイズ
 	vertexBufferViewModel.StrideInBytes = sizeof(VertexData);
 
-	// データはもう modelData.vertices に完成しているので、memcpyでまるごとコピーする
+	// データはもう modelData.vertices に完成しているので、リソースにmemcpyでまるごとコピーする
 	VertexData* vertexDataModel = nullptr;
 	vertexResourceModel->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataModel));
 	std::memcpy(vertexDataModel, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
@@ -1769,6 +1803,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	io.Fonts->Build();
 #endif
 
+	//════════════════════════════════════════════════════
+	// 入力の初期化
+	//════════════════════════════════════════════════════
+	Input input;
+	input.Initialize(wc.hInstance, hwnd);
 
 	// Texture切り替え変数
 	bool useMonsterBall = true;
@@ -1782,6 +1821,26 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			DispatchMessage(&msg);
 		} else {
 			// ゲームの処理
+
+			//════════════════════════════════════════════════════
+			// 入力の更新（毎フレーム処理の先頭）
+			//════════════════════════════════════════════════════
+			input.Update();
+
+			//════════════════════════════════════════════════════
+			// 入力テスト（動作確認用・確認後に削除）
+			//════════════════════════════════════════════════════
+			if (input.PushKey(DIK_0)) {
+				Log(logStream, "0 PUSH");
+			}
+
+			if (input.TriggerKey(DIK_SPACE)) {
+				Log(logStream, "SPACE TRIGGER");
+			}
+
+			if (input.ReleaseTriggerKey(DIK_SPACE)) {
+				Log(logStream, "SPACE RELEASE");
+			}
 
 			// ────────────────────────────────────────
 			// ImGui開始処理
