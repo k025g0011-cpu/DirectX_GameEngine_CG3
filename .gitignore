@@ -370,3 +370,6 @@ FodyWeavers.xsd
 Dumps/
 
 imgui.ini
+
+# （*.obj で除外されているVisual Studioの中間ファイルとは別物）
+!resources/**/*.obj
