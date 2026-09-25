@@ -16,6 +16,7 @@
 #include <numbers>
 #include "MathUtility.h"
 #include "Input.h"
+#include "DebugCamera.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -36,17 +37,11 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 // ComPtr（COMオブジェクトの参照カウントを自動で管理してくれるクラス）用
 #include <wrl.h>
 
-// キーボード入力用（DirectInput）
-// ※ DIRECTINPUT_VERSION は必ず dinput.h より前に定義すること
-#define DIRECTINPUT_VERSION 0x0800   // DirectInput 8.00 を使う
-#include <dinput.h>
-
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "Dbghelp.lib")
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
-#pragma comment(lib, "dinput8.lib")   
 
 // ════════════════════════════════════════
 // Microsoft::WRL::ComPtr は毎回書くと長いので、ComPtr と短縮して使えるようにする
@@ -193,33 +188,6 @@ void Log(std::ostream& os, const std::wstring& message) {
 	// wstringからstringに変換して、
 	// stringの方のLog関数を呼ぶ
 	Log(os, ConvertString(message));
-}
-
-//════════════════════════════════════════════════════
-// キー入力判定ヘルパー
-//   key    : 今フレームの状態
-//   preKey : 前フレームの状態
-//   keyNumber : DIK_〜 (uint8_tなので0〜255に制限される)
-//════════════════════════════════════════════════════
-
-// 押している状態か
-bool PushKey(const BYTE* key, uint8_t keyNumber) {
-	return key[keyNumber] != 0;
-}
-
-// 離している状態か
-bool ReleaseKey(const BYTE* key, uint8_t keyNumber) {
-	return key[keyNumber] == 0;
-}
-
-// 押した瞬間か（前:OFF → 今:ON）
-bool TriggerKey(const BYTE* key, const BYTE* preKey, uint8_t keyNumber) {
-	return key[keyNumber] != 0 && preKey[keyNumber] == 0;
-}
-
-// 離した瞬間か（前:ON → 今:OFF）
-bool ReleaseTriggerKey(const BYTE* key, const BYTE* preKey, uint8_t keyNumber) {
-	return key[keyNumber] == 0 && preKey[keyNumber] != 0;
 }
 
 // ════════════════════════════════════════
@@ -1803,11 +1771,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	io.Fonts->Build();
 #endif
 
-	//════════════════════════════════════════════════════
-	// 入力の初期化
-	//════════════════════════════════════════════════════
+
+	// ════════════════════════════════════════
+	// 入力・デバッグカメラの初期化
+	// ════════════════════════════════════════
 	Input input;
 	input.Initialize(wc.hInstance, hwnd);
+
+	DebugCamera debugCamera;
+	debugCamera.Initialize(&input, kClientWidth, kClientHeight);
+
+	// デバッグカメラの有効／無効（F1キーで切り替え）
+	bool useDebugCamera = false;
+
 
 	// Texture切り替え変数
 	bool useMonsterBall = true;
@@ -1822,25 +1798,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		} else {
 			// ゲームの処理
 
-			//════════════════════════════════════════════════════
+			// ════════════════════════════════════════
 			// 入力の更新（毎フレーム処理の先頭）
-			//════════════════════════════════════════════════════
+			// ════════════════════════════════════════
 			input.Update();
-
-			//════════════════════════════════════════════════════
-			// 入力テスト（動作確認用・確認後に削除）
-			//════════════════════════════════════════════════════
-			if (input.PushKey(DIK_0)) {
-				Log(logStream, "0 PUSH");
-			}
-
-			if (input.TriggerKey(DIK_SPACE)) {
-				Log(logStream, "SPACE TRIGGER");
-			}
-
-			if (input.ReleaseTriggerKey(DIK_SPACE)) {
-				Log(logStream, "SPACE RELEASE");
-			}
 
 			// ────────────────────────────────────────
 			// ImGui開始処理
@@ -1850,6 +1811,25 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui_ImplWin32_NewFrame();
 			ImGui::NewFrame();
 #endif
+
+			// ════════════════════════════════════════
+			// デバッグカメラの更新
+			//   WantCaptureMouse は NewFrame() の中で計算されるので、必ずその後で読む
+			// ════════════════════════════════════════
+			// F1キーで通常カメラと切り替え
+			if (input.TriggerKey(DIK_F1)) {
+				useDebugCamera = !useDebugCamera;
+			}
+
+			// ImGuiを操作している最中はカメラを動かさない
+#ifdef USE_IMGUI
+			bool imguiUsingMouse = ImGui::GetIO().WantCaptureMouse;
+#else
+			bool imguiUsingMouse = false;
+#endif
+			if (useDebugCamera && !imguiUsingMouse) {
+				debugCamera.Update();
+			}
 
 			// カメラとスフィアの設定
 #ifdef USE_IMGUI
@@ -1875,21 +1855,48 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			ImGui::DragFloat2("ModelUVScale", &uvTransformModel.scale.x, 0.01f, -10.0f, 10.0f);
 			ImGui::SliderAngle("ModelUVRotate", &uvTransformModel.rotate.z);
 			ImGui::End();
+
+			// ────────────────────────────────────────
+			// デバッグカメラの状態表示
+			// ────────────────────────────────────────
+			ImGui::Begin("DebugCamera");
+			ImGui::Text("F1 : %s", useDebugCamera ? "ON" : "OFF");
+			ImGui::Text("pos    : %.2f, %.2f, %.2f",
+				debugCamera.GetTranslation().x, debugCamera.GetTranslation().y, debugCamera.GetTranslation().z);
+			ImGui::Text("target : %.2f, %.2f, %.2f",
+				debugCamera.GetTarget().x, debugCamera.GetTarget().y, debugCamera.GetTarget().z);
+			ImGui::Text("dist   : %.2f", debugCamera.GetDistance());
+			ImGui::Separator();
+			ImGui::Text("mouse  : %.0f, %.0f  wheel %.1f",
+				input.GetMouseMove().x, input.GetMouseMove().y, input.GetMouseWheel());
+			ImGui::End();
 #endif
 
 			// ────────────────────────────────────────
 			// ＜3Dモデル＞     レンダ（クリップ空間まで変換）（３D）
 			// ────────────────────────────────────────
 			Matrix4x4 worldMatrixModel = MakeAffineMatrix(transformModel.scale, transformModel.rotate, transformModel.translate); // 拡縮、回転、移動
-			Matrix4x4 cameraMatrixModel = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate); // ワールド基準で、カメラはどこにいるか
-			Matrix4x4 viewMatrixModel = Inverse(cameraMatrixModel);  // カメラ基準で、ワールドはどこにあるか(ワールドをカメラに合わせる）
-			/*
-			  やりたいこと    ： カメラ基準の座標が欲しい
-			  計算方法       ： 世界全体を、カメラが原点に来るようにずらす
-			  結果          ： ずらした後の座標 ＝ カメラ基準の座標
-			*/
+			// ────────────────────────────────────────
+			// ビュー行列・射影行列（通常カメラ / デバッグカメラの切り替え）
+			// ────────────────────────────────────────
+			Matrix4x4 viewMatrixModel;
+			Matrix4x4 projectionMatrix;
 
-			Matrix4x4 projectionMatrix = MakePerspectiveMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f); // 透視投影 で遠いほど小さく見える処理を加え、２D上でも奥行を出す（ 視錐台切り取りカメラ ）
+			if (useDebugCamera) {
+				// デバッグカメラが自前で計算済みのものを受け取るだけ
+				viewMatrixModel = debugCamera.GetViewMatrix();
+				projectionMatrix = debugCamera.GetProjectionMatrix();
+			} else {
+				Matrix4x4 cameraMatrixModel = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate); // ワールド基準で、カメラはどこにいるか
+				viewMatrixModel = Inverse(cameraMatrixModel);  // カメラ基準で、ワールドはどこにあるか(ワールドをカメラに合わせる）
+				/*
+				  やりたいこと    ： カメラ基準の座標が欲しい
+				  計算方法       ： 世界全体を、カメラが原点に来るようにずらす
+				  結果          ： ずらした後の座標 ＝ カメラ基準の座標
+				*/
+
+				projectionMatrix = MakePerspectiveMatrix(0.45f, float(kClientWidth) / float(kClientHeight), 0.1f, 100.0f); // 透視投影 で遠いほど小さく見える処理を加え、２D上でも奥行を出す（ 視錐台切り取りカメラ ）
+			}
 			/*
 			* MakePerspectiveMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
 									   ↑         ↑            ↑      ↑
