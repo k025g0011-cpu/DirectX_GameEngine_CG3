@@ -148,6 +148,17 @@ void DirectXCommon::InitializeDevice() {
 		infoQueue->PushStorageFilter(&filter);
 	}
 #endif
+
+	// ────────────────────────────────────────────────────────────────
+	// ⑥ ディスクリプタ1個あたりのバイト数を取得しておく
+	//     device ごとに固有で、実行中に変わらないのでここで1回だけ取る
+	// ────────────────────────────────────────────────────────────────
+	descriptorSizeRTV_ = device_->GetDescriptorHandleIncrementSize(
+	    D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	descriptorSizeDSV_ = device_->GetDescriptorHandleIncrementSize(
+	    D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+	descriptorSizeSRV_ = device_->GetDescriptorHandleIncrementSize(
+	    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 
 
@@ -252,8 +263,6 @@ void DirectXCommon::InitializeRenderTargetView() {
 	rtvDescriptorHeap_ = CreateDescriptorHeap(
 		D3D12_DESCRIPTOR_HEAP_TYPE_RTV, kBackBufferCount, false);
 
-	descriptorSizeRTV_ = device_->GetDescriptorHandleIncrementSize(
-		D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 	// ────────────────────────────────────────────────────────────────
 	// ② スワップチェーンから各バッファを取り出す
@@ -327,9 +336,6 @@ void DirectXCommon::InitializeDepthStencilView() {
 	dsvDescriptorHeap_ = CreateDescriptorHeap(
 		D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
 
-	descriptorSizeDSV_ = device_->GetDescriptorHandleIncrementSize(
-		D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
-
 	// ────────────────────────────────────────────────────────────────
 	// ③ DSV を作る（ヒープの先頭に配置）
 	// ────────────────────────────────────────────────────────────────
@@ -353,8 +359,6 @@ void DirectXCommon::InitializeSrvHeap() {
 	srvDescriptorHeap_ = CreateDescriptorHeap(
 		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, kMaxSrvCount, true);
 
-	descriptorSizeSRV_ = device_->GetDescriptorHandleIncrementSize(
-		D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 
 // ════════════════════════════════════════════════════════════════════

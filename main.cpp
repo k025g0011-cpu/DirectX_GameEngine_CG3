@@ -210,192 +210,6 @@ static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception) {
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 
-// ════════════════════════════════════════
-// CompileShader関数
-// hlslファイルを読み、DXCでコンパイルし、GPUが実行できるバイナリ(Blob)を返す　（GPUが読めるテキスト形式　＝　バイナリ）
-// ════════════════════════════════════════
-ComPtr<IDxcBlob> CompileShader(
-	// CompilerするShaderファイルへのパス
-	const std::wstring& filePath,
-	// Compilerに使用するProfile
-	const wchar_t* profile,
-	// 初期化で生成したものを3つ
-	const ComPtr<IDxcUtils>& dxcUtils,
-	const ComPtr<IDxcCompiler3>& dxcCompiler,
-	const ComPtr<IDxcIncludeHandler>& includeHandler,
-	// ログ出力先(スライドにはない。自作Logに合わせて追加)
-	std::ostream& os) {
-
-	// ────────────────────────────────────────
-	// 1. hlslファイルを読む
-	// ────────────────────────────────────────
-	// これからシェーダーをコンパイルする旨をログに出す
-	Log(os, std::format(L"Begin CompileShader, path:{}, profile:{}", filePath, profile));
-	// hlslファイルを読む
-	ComPtr<IDxcBlobEncoding> shaderSource = nullptr; // テキストの入れ物を指すアドレス
-	HRESULT hr = dxcUtils->LoadFile(filePath.c_str(), nullptr, &shaderSource); // テキストを箱に入れる＆テキストの箱を指すアドレスを格納する
-	// 読めなかったら止める
-	assert(SUCCEEDED(hr));
-	// 読み込んだファイルの内容を設定する
-	DxcBuffer shaderSourceBuffer; // コンパイラに渡す伝票(テキストの場所・サイズ・文字コード)。中身は次の3行で埋める
-	shaderSourceBuffer.Ptr = shaderSource->GetBufferPointer();
-	shaderSourceBuffer.Size = shaderSource->GetBufferSize();
-	shaderSourceBuffer.Encoding = DXC_CP_UTF8; // UTF8の文字コードであることを通知
-
-	// ────────────────────────────────────────
-	// 2. Compileする
-	// ────────────────────────────────────────
-	LPCWSTR arguments[] = {
-		filePath.c_str(),           // コンパイル対象のhlslファイル名
-		L"-E", L"main",             // エントリーポイントの指定。基本的にmain以外にはしない
-		L"-T", profile,             // ShaderProfileの設定
-		L"-Zi", L"-Qembed_debug",   // デバッグ用の情報を埋め込む
-		L"-Od",                     // 最適化を外しておく
-		L"-Zpr",                    // メモリレイアウトは行優先
-	};
-	// 実際にShaderをコンパイルする
-	ComPtr<IDxcResult> shaderResult = nullptr;
-	hr = dxcCompiler->Compile(
-		&shaderSourceBuffer,        // 読み込んだファイル
-		arguments,                  // コンパイルオプション
-		_countof(arguments),        // コンパイルオプションの数
-		includeHandler.Get(),       // includeが含まれた諸々（ComPtrから生ポインタを借りる）
-		IID_PPV_ARGS(&shaderResult) // コンパイル結果の箱(エラー文とバイナリの詰め合わせ)のアドレスをshaderResultに格納
-	);
-	// コンパイルエラーではなくdxcが起動できないなど致命的な状況
-	assert(SUCCEEDED(hr));
-
-	// ────────────────────────────────────────
-	// 3. 警告・エラーがでていないか確認する
-	// ────────────────────────────────────────
-	ComPtr<IDxcBlobUtf8> shaderError = nullptr;
-	shaderResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&shaderError), nullptr); // コンパイル結果からエラー情報部分を取得
-	if (shaderError != nullptr && shaderError->GetStringLength() != 0) {
-		Log(os, shaderError->GetStringPointer());
-		// 警告・エラーダメゼッタイ
-		assert(false);
-	}
-
-	// ────────────────────────────────────────
-	// 4. Compile結果を受け取って返す
-	// ────────────────────────────────────────
-	ComPtr<IDxcBlob> shaderBlob = nullptr; // 翻訳後のバイナリを管理する入れ物(Blob)のアドレスを格納
-	hr = shaderResult->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&shaderBlob), nullptr); // 結果の箱から実行用バイナリの入れ物を取り出す
-	assert(SUCCEEDED(hr));
-	// 成功したログを出す
-	Log(os, std::format(L"Compile Succeeded, path:{}, profile:{}", filePath, profile));
-	// もう使わないリソース（shaderSource / shaderResult / shaderError）は
-	// ComPtrがこの関数を抜けるときに自動で解放するので、Releaseを書く必要はない
-	// 実行用のバイナリを返却
-	return shaderBlob;
-}
-
-// ════════════════════════════════════════
-// CreateBufferResource関数
-// VertexBufferやConstantBufferなど、BufferResourceを作る共通処理
-// ════════════════════════════════════════
-ComPtr<ID3D12Resource> CreateBufferResource(const ComPtr<ID3D12Device>& device, size_t sizeInBytes) {
-	// 頂点リソース用のヒープの設定
-	D3D12_HEAP_PROPERTIES uploadHeapProperties{};
-	uploadHeapProperties.Type = D3D12_HEAP_TYPE_UPLOAD; // UploadHeapを使う
-	// リソースの設定
-	D3D12_RESOURCE_DESC bufferResourceDesc{};
-	// バッファリソース。テクスチャの場合はまた別の設定をする
-	bufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	bufferResourceDesc.Width = sizeInBytes; // リソースのサイズ
-	// バッファの場合はこれらは1にする決まり
-	bufferResourceDesc.Height = 1;
-	bufferResourceDesc.DepthOrArraySize = 1;
-	bufferResourceDesc.MipLevels = 1;
-	bufferResourceDesc.SampleDesc.Count = 1;
-	// バッファの場合はこれにする決まり
-	bufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	// 実際にリソースを作る
-	ComPtr<ID3D12Resource> bufferResource = nullptr;
-	HRESULT hr = device->CreateCommittedResource(&uploadHeapProperties, D3D12_HEAP_FLAG_NONE,
-		&bufferResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-		IID_PPV_ARGS(&bufferResource));
-	assert(SUCCEEDED(hr));
-	return bufferResource;
-}
-
-// ════════════════════════════════════════
-// CreateDescriptorHeap関数
-// View（リソースの説明書）を格納するディスクリプターヒープを作る関数
-// ════════════════════════════════════════
-ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(
-	const ComPtr<ID3D12Device>& device, D3D12_DESCRIPTOR_HEAP_TYPE heapType, UINT numDescriptors, bool shaderVisible)
-{
-	ComPtr<ID3D12DescriptorHeap> descriptorHeap = nullptr;
-	D3D12_DESCRIPTOR_HEAP_DESC descriptorHeapDesc{};
-	descriptorHeapDesc.Type = heapType;
-	descriptorHeapDesc.NumDescriptors = numDescriptors;
-	descriptorHeapDesc.Flags = shaderVisible ? D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE : D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	HRESULT hr = device->CreateDescriptorHeap(&descriptorHeapDesc, IID_PPV_ARGS(&descriptorHeap));
-	assert(SUCCEEDED(hr));
-	return descriptorHeap;
-}
-
-// ════════════════════════════════════════
-// GetCPUDescriptorHandle / GetGPUDescriptorHandle関数
-// DescriptorHeapの先頭から index 個分進めたハンドルを返す
-// descriptorSize : そのヒープのタイプのディスクリプタ1個分のバイト数
-// ════════════════════════════════════════
-D3D12_CPU_DESCRIPTOR_HANDLE GetCPUDescriptorHandle(const ComPtr<ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriptorSize, uint32_t index)
-{
-	D3D12_CPU_DESCRIPTOR_HANDLE handleCPU = descriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	handleCPU.ptr += (descriptorSize * index);
-	return handleCPU;
-}
-
-D3D12_GPU_DESCRIPTOR_HANDLE GetGPUDescriptorHandle(const ComPtr<ID3D12DescriptorHeap>& descriptorHeap, uint32_t descriptorSize, uint32_t index)
-{
-	D3D12_GPU_DESCRIPTOR_HANDLE handleGPU = descriptorHeap->GetGPUDescriptorHandleForHeapStart();
-	handleGPU.ptr += (descriptorSize * index);
-	return handleGPU;
-}
-
-
-// ════════════════════════════════════════
-// CreateDepthStencilTextureResource関数
-// 奥行きを記録するための深度バッファ(DepthStencilTexture)をVRAM上に作る
-// width / height : 画面(RTV)と同じサイズにする
-// ════════════════════════════════════════
-ComPtr<ID3D12Resource> CreateDepthStencilTextureResource(const ComPtr<ID3D12Device>& device, int32_t width, int32_t height)
-{
-	// 1. 生成するResourceの設定
-	D3D12_RESOURCE_DESC resourceDesc{};
-	resourceDesc.Width = width; // Textureの幅
-	resourceDesc.Height = height; // Textureの高さ
-	resourceDesc.MipLevels = 1; // mipmapの数
-	resourceDesc.DepthOrArraySize = 1; // 奥行き or 配列Textureの配列数
-	resourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // DepthStencilとして利用可能なフォーマット
-	resourceDesc.SampleDesc.Count = 1; // サンプリングカウント。1固定。
-	resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D; // 2次元
-	resourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL; // DepthStencilとして使う通知
-
-	// 2. 利用するHeapの設定
-	D3D12_HEAP_PROPERTIES heapProperties{};
-	heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT; // VRAM上に作る
-
-	// 3. 深度値のクリア最適化設定
-	D3D12_CLEAR_VALUE depthClearValue{};
-	depthClearValue.DepthStencil.Depth = 1.0f; // 1.0f（最大値）でクリア
-	depthClearValue.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // フォーマット。Resourceと合わせる
-
-	// 4. Resourceの生成
-	ComPtr<ID3D12Resource> resource = nullptr;
-	HRESULT hr = device->CreateCommittedResource(
-		&heapProperties, // Heapの設定
-		D3D12_HEAP_FLAG_NONE, // Heapの特殊な設定。特になし。
-		&resourceDesc,  // Resourceの設定
-		D3D12_RESOURCE_STATE_DEPTH_WRITE, // 深度値を書き込む状態にしておく
-		&depthClearValue, // Clear最適値
-		IID_PPV_ARGS(&resource)); // 作成するResourceポインタへのポインタ
-	assert(SUCCEEDED(hr));
-
-	return resource;
-}
 
 // ════════════════════════════════════════
 // LoadMaterialTemplateFile関数
@@ -1050,13 +864,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// モデルを用意する
 	// 使いたい方のコメントを外す（ModelDataを返すので以降のコードは共通）
 	// ════════════════════════════════════════════════════
-	ModelData modelData = LoadObjFile("resources", "barrel.obj");
+	ModelData modelData = LoadObjFile("resources", "cube1.obj");
 	//ModelData modelData = CreateSphereModelData(16);
 	// 
 	// ════════════════════════════════════════════════════
 	// モデルの VertexResource を生成してデータを書き込む
 	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> vertexResourceModel = CreateBufferResource(device, sizeof(VertexData) * modelData.vertices.size());
+	ComPtr<ID3D12Resource> vertexResourceModel = dxCommon.CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
 
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewModel{};
 	// リソースの先頭のアドレスから使う
@@ -1079,7 +893,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	D3D12_INDEX_BUFFER_VIEW indexBufferViewModel{};
 
 	if (!modelData.indices.empty()) {
-		indexResourceModel = CreateBufferResource(device, sizeof(uint32_t) * modelData.indices.size());
+		indexResourceModel = dxCommon.CreateBufferResource(sizeof(uint32_t) * modelData.indices.size());
 		// リソースの先頭のアドレスから使う
 		indexBufferViewModel.BufferLocation = indexResourceModel->GetGPUVirtualAddress();
 		// 使用するリソースのサイズはインデックス数ぶんのサイズ
@@ -1097,7 +911,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// TransformationMatrix用のResourceを作る
 	// Matrix4x4 1つ分のサイズを用意する
 	// ════════════════════════════════════════
-	ComPtr<ID3D12Resource> transformationMatrixResourceModel = CreateBufferResource(device, sizeof(TransformationMatrix));
+	ComPtr<ID3D12Resource> transformationMatrixResourceModel = dxCommon.CreateBufferResource(sizeof(TransformationMatrix));
 	// データを書き込む
 	TransformationMatrix* transformationMatrixDataModel = nullptr;
 	// 書き込むためのアドレスを取得
@@ -1115,7 +929,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ════════════════════════════════════════════════════
 	// スプライトの VertexResource を生成する
 	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
+	ComPtr<ID3D12Resource> vertexResourceSprite = dxCommon.CreateBufferResource(sizeof(VertexData) * 4);
 
 	// ════════════════════════════════════════════════════
 	// スプライトの VertexBufferView を作成する
@@ -1133,7 +947,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ════════════════════════════════════════════════════
 	// スプライトの IndexResource を生成する
 	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
+	ComPtr<ID3D12Resource> indexResourceSprite = dxCommon.CreateBufferResource(sizeof(uint32_t) * 6);
 
 	// ════════════════════════════════════════════════════
 	// スプライトの indexBufferView を生成する
@@ -1182,7 +996,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ════════════════════════════════════════
 	// Sprite用のTransformationMatrixのResourceとTransformを作る
 	// ════════════════════════════════════════
-	ComPtr<ID3D12Resource> transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(TransformationMatrix));
+	ComPtr<ID3D12Resource> transformationMatrixResourceSprite = dxCommon.CreateBufferResource(sizeof(TransformationMatrix));
 	TransformationMatrix* transformationMatrixDataSprite = nullptr;
 	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
 	transformationMatrixDataSprite->WVP = MakeIdentity4x4();
@@ -1196,7 +1010,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// グリッドのWVP行列用（transformationMatrix）リソース
 	// ════════════════════════════════════════
 	ComPtr<ID3D12Resource> transformationMatrixResourceGrid =
-		CreateBufferResource(device, sizeof(TransformationMatrix));
+		dxCommon.CreateBufferResource(sizeof(TransformationMatrix));
 
 	TransformationMatrix* transformationMatrixDataGrid = nullptr;
 	transformationMatrixResourceGrid->Map(0, nullptr,
@@ -1209,7 +1023,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 平行光源用のResourceを作る
 	// シーンに1つだけ。球とSpriteで共通
 	// ════════════════════════════════════════
-	ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
+	ComPtr<ID3D12Resource> directionalLightResource = dxCommon.CreateBufferResource(sizeof(DirectionalLight));
 	DirectionalLight* directionalLightData = nullptr;
 	directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
 	directionalLightData->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };  // 白
@@ -1223,7 +1037,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// -----------------------------------------
 	// モデル用マテリアル
 	// -----------------------------------------
-	ComPtr<ID3D12Resource> modelMaterialResource = CreateBufferResource(device, sizeof(Material));
+	ComPtr<ID3D12Resource> modelMaterialResource = dxCommon.CreateBufferResource(sizeof(Material));
 	// マテリアルにデータを書き込む
 	Material* modelMaterialData = nullptr;
 	// 書き込むためのアドレスを取得
@@ -1241,7 +1055,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// -----------------------------------------
 	// スプライト用マテリアル
 	// -----------------------------------------
-	ComPtr<ID3D12Resource> spriteMaterialResource = CreateBufferResource(device, sizeof(Material));
+	ComPtr<ID3D12Resource> spriteMaterialResource = dxCommon.CreateBufferResource(sizeof(Material));
 	// マテリアルにデータを書き込む
 	Material* spriteMaterialData = nullptr;
 	// 書き込むためのアドレスを取得
@@ -1264,7 +1078,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	//   読み込み・VRAM への転送・SRV の生成は TextureManager がやってくれる
 	// ════════════════════════════════════════════════════════════════
 	uint32_t uvCheckerTextureIndex = textureManager.Load("resources/uvChecker.png");
-	uint32_t modelTextureIndex = textureManager.Load(modelData.material.textureFilePath);
+
+
+	// mtl にテクスチャが書かれていない場合は、白1×1で代用する
+	//   （色だけのマテリアル。白を掛けても色は変わらない）
+	std::string modelTexturePath = modelData.material.textureFilePath;
+	if (modelTexturePath.empty()) {
+		modelTexturePath = "resources/white1x1.png";
+	}
+	uint32_t modelTextureIndex = textureManager.Load(modelTexturePath);
 
 
 	// ════════════════════════════════════════
