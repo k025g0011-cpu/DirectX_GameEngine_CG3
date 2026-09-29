@@ -22,6 +22,8 @@
 #include "WinApp.h"
 #include "DirectXCommon.h"
 #include "TextureManager.h" 
+#include "Model.h"
+#include "Object3dStructs.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -70,12 +72,7 @@ struct D3DResourceLeakChecker {
 };
 
 
-// 1頂点の持つデータ
-struct VertexData {	  // 全体＜32＞バイト
-	Vector3 position; // 座標       (float<3> * 3) = 12バイト  
-	Vector2 texcoord; // UV座標     (float<2> * 2) = 8バイト
-	Vector3 normal;   // 頂点の向き  (float<3> * 3) = 12バイト
-};
+
 
 // ════════════════════════════════════════
 // 線描画用の頂点
@@ -86,56 +83,6 @@ struct LineVertex {   // 全体＜28＞バイト
 	Vector4 color;      // 色   (float<4> * 4) = 16バイト
 };
 
-// ════════════════════════════════════════
-// MaterialData構造体
-// mtlファイルから読み込んだマテリアル情報
-// ※ 今はテクスチャのパスだけ。将来 Kd(色) や法線マップのパスが増える
-// ════════════════════════════════════════
-struct MaterialData {
-
-	// マテリアル名（mtl の newmtl。obj の usemtl と照合するのに使う）
-	std::string name;
-
-	std::string textureFilePath;   // 使用するテクスチャの相対パス（"resources/uvChecker.png" の形）
-
-	// 拡散色（mtl の Kd）＋ 不透明度（mtl の d）
-	//   mtl に書かれていない場合は白・不透明のまま
-	Vector4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-};
-
-// ════════════════════════════════════════
-// ModelData構造体
-// objファイルから読み取ったモデル全体のデータ
-// indices が空 → インデックスを使わない描画 (DrawInstanced)
-// indices が有 → インデックスを使う描画   (DrawIndexedInstanced)
-// ════════════════════════════════════════
-struct ModelData {
-	std::vector<VertexData> vertices;   // 頂点データ
-	std::vector<uint32_t>   indices;    // インデックス（空なら未使用）
-	MaterialData material;
-};
-
-// 座標変換用の行列（VSに渡す定数）
-struct TransformationMatrix { // 全体＜128＞バイト
-	Matrix4x4 WVP;    // クリップ空間へ変換する行列
-	Matrix4x4 World;  // ワールド空間へ変換する行列（法線の変換に使う）
-};
-
-
-// オブジェクトごとに持つマテリアル情報
-struct Material {			// 全体＜96＞バイト
-	Vector4 color;			// マテリアル色　(float<4> * 4) = 16バイト
-	int32_t enableLighting; // 有効or無効					　　 ４バイト
-	float padding[3];		// hlsl側の自動空白に合わせる　　　 12バイト
-	Matrix4x4 uvTransform;  // UV座標　　　　　　　　　　　　　　64バイト
-};
-
-// 平行光源（DirectionalLight） (
-struct DirectionalLight {// 全体＜32＞バイト
-	Vector4 color;		 // ライト色　　　(float<4> * 4) = 16バイト
-	Vector3 direction;   // ライトの向き　(float<3> * 3) = 12バイト
-	float intensity;     // 輝度							４バイト
-};
 
 
 // string -> wstring
@@ -217,13 +164,13 @@ static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception) {
 // directoryPath : ファイルが置いてあるフォルダ (例 "resources")
 // filename      : mtlのファイル名             (例 "plane.mtl")
 // ════════════════════════════════════════
-MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename)
+std::vector<MaterialData> LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename)
 {
 	// ────────────────────────────────────────
 	// 1. 必要な変数の宣言
 	// ────────────────────────────────────────
-	MaterialData materialData;   // 構築して返す完成品
-	std::string line;            // ファイルから読んだ1行を格納するもの
+	std::vector<MaterialData> materials;   // 構築して返す完成品（mtl に書かれた順）
+	std::string line;                      // ファイルから読んだ1行を格納するもの
 
 	// ────────────────────────────────────────
 	// 2. ファイルを開く
@@ -232,43 +179,60 @@ MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const st
 	assert(file.is_open());   // 開けなかったら止める(objと同じ階層にmtlが無い等)
 
 	// ────────────────────────────────────────
-	// 3. ファイルを読み、MaterialDataを構築していく
+	// 3. ファイルを読み、マテリアルを1つずつ構築していく
 	// ────────────────────────────────────────
 	while (std::getline(file, line)) {
 		std::string identifier;
 		std::istringstream s(line);
 		s >> identifier;
 
+		// ─── 新しいマテリアルの開始 ───
+		//     ここから次の newmtl までが、このマテリアルの設定になる
+		if (identifier == "newmtl") {
+			MaterialData material{};
+			s >> material.name;              // obj の usemtl と照合する名前
+			materials.push_back(material);
+			continue;
+		}
+
+		// ─── newmtl より前の行（先頭のコメントなど）は捨てる ───
+		if (materials.empty()) {
+			continue;
+		}
+
+		// ─── 書き込み先は「いちばん最後に作ったマテリアル」 ───
+		// 毎回 back() を呼び直す（push_back で vector が引っ越すため）
+		MaterialData& current = materials.back();
+
 		// ─── 拡散色に使うテクスチャ ───
 		if (identifier == "map_Kd") {
 			std::string textureFilename;
 			s >> textureFilename;
 			// mtlにはファイル名しか書かれていないので、ディレクトリ名と連結してパスにする
-			materialData.textureFilePath = directoryPath + "/" + textureFilename;
+			current.textureFilePath = directoryPath + "/" + textureFilename;
 		}
 		// ─── 拡散色（RGB） ───
 		else if (identifier == "Kd") {
-			s >> materialData.color.x >> materialData.color.y >> materialData.color.z;
+			s >> current.color.x >> current.color.y >> current.color.z;
 		}
 		// ─── 不透明度（1.0 = 不透明） ───
 		else if (identifier == "d") {
-			s >> materialData.color.w;
+			s >> current.color.w;
 		}
 		// ─── 透明度（d の逆。書き出すソフトによってはこちら） ───
 		else if (identifier == "Tr") {
 			float transparency = 0.0f;
 			s >> transparency;
-			materialData.color.w = 1.0f - transparency;
+			current.color.w = 1.0f - transparency;
 		}
-		// 上記以外( newmtl / Ka / Ks / Ns / illum など )は今は無視する
+		// 上記以外( Ka / Ks / Ns / Ni / Ke / illum など )は今は無視する
 	}
 
 	// ────────────────────────────────────────
-	// 4. MaterialDataを返す
+	// 4. マテリアル一覧を返す
 	// ────────────────────────────────────────
-	return materialData;
+	return materials;
 }
-
 
 // ════════════════════════════════════════
 // LoadObjFile関数
@@ -295,7 +259,36 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 	std::ifstream file(directoryPath + "/" + filename);
 	assert(file.is_open());   // 開けなかったら止める(パス間違い・作業ディレクトリ違いが原因)
 
+	// ────────────────────────────────────────
+	// 2.5 Mesh を切り分けるための状態
+	//     usemtl が出てくるたびに、そこまでに積んだ面を1つの Mesh として確定する
+	// ────────────────────────────────────────
+	uint32_t currentMaterialIndex = 0;   // いま使っているマテリアルの番号
+	uint32_t currentStartVertex = 0;   // いまの Mesh が始まった頂点番号
 
+	// ここまでに積んだ面を1つの Mesh として確定する
+	auto flushMesh = [&]() {
+		// 「今の頂点数」−「この Mesh が始まった位置」＝ この Mesh の頂点数
+		uint32_t vertexCount =
+			static_cast<uint32_t>(modelData.vertices.size()) - currentStartVertex;
+
+		// 1面も積まれていなければ Mesh を作らない
+		//   （面より先に usemtl が来る obj で、空の Mesh ができるのを防ぐ）
+		if (vertexCount == 0) {
+			return;
+		}
+
+		Mesh mesh{};
+		mesh.materialIndex = currentMaterialIndex;
+		mesh.startVertex = currentStartVertex;
+		mesh.vertexCount = vertexCount;
+		mesh.startIndex = 0;   // obj はインデックスを作らないので使わない
+		mesh.indexCount = 0;
+		modelData.meshes.push_back(mesh);
+
+		// 次の Mesh はここから始まる
+		currentStartVertex = static_cast<uint32_t>(modelData.vertices.size());
+	};
 
 	// ────────────────────────────────────────
 	// 3. ファイルを読み、ModelDataを構築していく
@@ -386,10 +379,41 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 			// materialTemplateLibraryファイルの名前を取得する
 			std::string materialFilename;
 			s >> materialFilename;
-			// 基本的にobjファイルと同一階層にmtlは存在させるので、ディレクトリ名とファイル名を渡す
-			modelData.material = LoadMaterialTemplateFile(directoryPath, materialFilename);
+
+			// mtl に書かれていたマテリアルを「全部」受け取る
+			modelData.materials = LoadMaterialTemplateFile(directoryPath, materialFilename);
+		
+		} else if (identifier == "usemtl") {
+			std::string materialName;
+			s >> materialName;
+
+			// ここまでに積んだ面を1つの Mesh として確定する
+			flushMesh();
+
+			// 名前から、使うマテリアルの番号を探す
+			currentMaterialIndex = 0;   // 見つからなければ0番を使う
+			for (uint32_t i = 0; i < modelData.materials.size(); ++i) {
+				if (modelData.materials[i].name == materialName) {
+					currentMaterialIndex = i;
+					break;
+				}
+			}
 		}
 		// 上記以外の識別子( # / o / s / usemtl )は今は無視する
+	}
+
+	// ────────────────────────────────────────
+	// 4. 後始末
+	// ────────────────────────────────────────
+
+	// 最後の usemtl 以降に積んだ面を Mesh として確定する
+	//   usemtl が1つも無い obj でも、ここで全頂点ぶんの Mesh が1個できる
+	flushMesh();
+
+	// mtl が無い／読めなかった場合のデフォルトマテリアル（白・テクスチャなし）
+	//   Mesh の materialIndex は 0 のままなので、これで辻褄が合う
+	if (modelData.materials.empty()) {
+		modelData.materials.push_back(MaterialData{});
 	}
 
 	// ────────────────────────────────────────
@@ -449,10 +473,6 @@ ModelData CreateSphereModelData(uint32_t kSubdivision)
 {
 
 	ModelData modelData;
-
-	// プロシージャル生成なのでmtlファイルが存在しない。
-	// LoadTexture(modelData.material.textureFilePath) が空文字列で落ちないよう、既定のテクスチャを指定しておく
-	modelData.material.textureFilePath = "resources/uvChecker.png";
 
 	const uint32_t vertexCount = (kSubdivision + 1) * (kSubdivision + 1);  // 格子点の数
 	const uint32_t indexCount = kSubdivision * kSubdivision * 6;          // マス数×6
@@ -517,6 +537,20 @@ ModelData CreateSphereModelData(uint32_t kSubdivision)
 			modelData.indices[start + 5] = d;
 		}
 	}
+
+	// 既定のマテリアルを1つ用意する（mtl が存在しないため）
+	MaterialData material{};
+	material.textureFilePath = "resources/uvChecker.png";
+	modelData.materials.push_back(material);
+
+	// 全体を1つの Mesh として扱う（インデックス描画）
+	Mesh mesh{};
+	mesh.materialIndex = 0;
+	mesh.startVertex = 0;
+	mesh.vertexCount = static_cast<uint32_t>(modelData.vertices.size());
+	mesh.startIndex = 0;
+	mesh.indexCount = static_cast<uint32_t>(modelData.indices.size());
+	modelData.meshes.push_back(mesh);
 
 	return modelData;
 }
@@ -859,71 +893,28 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		IID_PPV_ARGS(&graphicsPipelineState)); // 生成したPSOのアドレスをgraphicsPipelineStateに格納
 	assert(SUCCEEDED(hr));
 
-
 	// ════════════════════════════════════════════════════
 	// モデルを用意する
 	// 使いたい方のコメントを外す（ModelDataを返すので以降のコードは共通）
 	// ════════════════════════════════════════════════════
-	ModelData modelData = LoadObjFile("resources", "cube1.obj");
+	ModelData modelData = LoadObjFile("resources", "multiMesh.obj");
 	//ModelData modelData = CreateSphereModelData(16);
-	// 
-	// ════════════════════════════════════════════════════
-	// モデルの VertexResource を生成してデータを書き込む
-	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> vertexResourceModel = dxCommon.CreateBufferResource(sizeof(VertexData) * modelData.vertices.size());
-
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewModel{};
-	// リソースの先頭のアドレスから使う
-	vertexBufferViewModel.BufferLocation = vertexResourceModel->GetGPUVirtualAddress();
-	// 使用するリソースのサイズは頂点数ぶんのサイズ（size_t→UINTのキャストが必要）
-	vertexBufferViewModel.SizeInBytes = UINT(sizeof(VertexData) * modelData.vertices.size());
-	// 1頂点あたりのサイズ
-	vertexBufferViewModel.StrideInBytes = sizeof(VertexData);
-
-	// データはもう modelData.vertices に完成しているので、リソースにmemcpyでまるごとコピーする
-	VertexData* vertexDataModel = nullptr;
-	vertexResourceModel->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataModel));
-	std::memcpy(vertexDataModel, modelData.vertices.data(), sizeof(VertexData) * modelData.vertices.size());
 
 	// ════════════════════════════════════════════════════
-	// モデルの IndexResource を生成してデータを書き込む
-	// ※ indices が空のモデル（obj）では作らない。nullptrのままにしておく
+	// Model クラスに渡す
+	//   頂点バッファ / インデックスバッファ / 行列CB / マテリアルCB / テクスチャ読み込み
+	//   これら全部を Model が中でやってくれる
+	//   ※ textureManager を使うので、その初期化（581行付近）より後でなければならない
 	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> indexResourceModel = nullptr;
-	D3D12_INDEX_BUFFER_VIEW indexBufferViewModel{};
-
-	if (!modelData.indices.empty()) {
-		indexResourceModel = dxCommon.CreateBufferResource(sizeof(uint32_t) * modelData.indices.size());
-		// リソースの先頭のアドレスから使う
-		indexBufferViewModel.BufferLocation = indexResourceModel->GetGPUVirtualAddress();
-		// 使用するリソースのサイズはインデックス数ぶんのサイズ
-		indexBufferViewModel.SizeInBytes = UINT(sizeof(uint32_t) * modelData.indices.size());
-		// インデックス1個の型。uint32_t なので R32_UINT（Strideは不要）
-		indexBufferViewModel.Format = DXGI_FORMAT_R32_UINT;
-
-		uint32_t* indexDataModel = nullptr;
-		indexResourceModel->Map(0, nullptr, reinterpret_cast<void**>(&indexDataModel));
-		std::memcpy(indexDataModel, modelData.indices.data(), sizeof(uint32_t) * modelData.indices.size());
-	}
-
-
-	// ════════════════════════════════════════
-	// TransformationMatrix用のResourceを作る
-	// Matrix4x4 1つ分のサイズを用意する
-	// ════════════════════════════════════════
-	ComPtr<ID3D12Resource> transformationMatrixResourceModel = dxCommon.CreateBufferResource(sizeof(TransformationMatrix));
-	// データを書き込む
-	TransformationMatrix* transformationMatrixDataModel = nullptr;
-	// 書き込むためのアドレスを取得
-	transformationMatrixResourceModel->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataModel));
-	// 単位行列を書きこんでおく
-	transformationMatrixDataModel->WVP = MakeIdentity4x4();
-	transformationMatrixDataModel->World = MakeIdentity4x4();
+	Model model;
+	model.Initialize(&dxCommon, &textureManager, modelData);
 
 	// Transform変数を作る
 	Transform transformModel{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
 	// カメラのTransformを作る。z = -5 の位置で z+ 方向を向いているカメラ
 	Transform cameraTransform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -5.0f} };
+
+
 
 
 	// ════════════════════════════════════════════════════
@@ -1030,22 +1021,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	directionalLightData->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // 真上から下へ
 	directionalLightData->intensity = 1.0f;
 
-	// ════════════════════════════════════════
-	// Material用のResourceを作る
-	// 今回はcolor1つ分のサイズを用意する
-	// ════════════════════════════════════════
-	// -----------------------------------------
-	// モデル用マテリアル
-	// -----------------------------------------
-	ComPtr<ID3D12Resource> modelMaterialResource = dxCommon.CreateBufferResource(sizeof(Material));
-	// マテリアルにデータを書き込む
-	Material* modelMaterialData = nullptr;
-	// 書き込むためのアドレスを取得
-	modelMaterialResource->Map(0, nullptr, reinterpret_cast<void**>(&modelMaterialData)); // CPUからでもデータを書ける住所をmaterialDataに受け取る
-	// 今回は赤を書き込んでみる
-	modelMaterialData->color = modelData.material.color;    // 白
-	modelMaterialData->enableLighting = true;                      // Lightingしない
-	modelMaterialData->uvTransform = MakeIdentity4x4();
 
 	Transform uvTransformModel{ // UV移動用
 	{ 1.0f, 1.0f, 1.0f },
@@ -1079,14 +1054,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ════════════════════════════════════════════════════════════════
 	uint32_t uvCheckerTextureIndex = textureManager.Load("resources/uvChecker.png");
 
-
-	// mtl にテクスチャが書かれていない場合は、白1×1で代用する
-	//   （色だけのマテリアル。白を掛けても色は変わらない）
-	std::string modelTexturePath = modelData.material.textureFilePath;
-	if (modelTexturePath.empty()) {
-		modelTexturePath = "resources/white1x1.png";
-	}
-	uint32_t modelTextureIndex = textureManager.Load(modelTexturePath);
 
 
 	// ════════════════════════════════════════
@@ -1131,9 +1098,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	PrimitiveDrawer primitiveDrawer;
 	primitiveDrawer.Initialize(&dxCommon);
 
-
-	// Texture切り替え変数
-	bool useMonsterBall = true;
 
 	// ウィンドウの×ボタンが押されるまでループ
 	while (true) {
@@ -1181,12 +1145,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat3("camera translate", &cameraTransform.translate.x, 0.01f);
 		ImGui::DragFloat3("camera rotate", &cameraTransform.rotate.x, 0.01f);
 		ImGui::DragFloat3("sphere rotate", &transformModel.rotate.x, 0.01f);
-		ImGui::ColorEdit4("color", &modelMaterialData->color.x);
+		// マテリアルの数ぶんループ（今は1個）
+		for (uint32_t i = 0; i < model.GetMaterialCount(); ++i) {
+			ImGui::PushID(int(i));                                     // 同じラベルを区別する
+			ImGui::ColorEdit4("model color", &model.GetMaterialData(i)->color.x);
+			ImGui::PopID();
+		}
 		ImGui::DragFloat3("light direction", &directionalLightData->direction.x, 0.01f);
 		ImGui::DragFloat("light intensity", &directionalLightData->intensity, 0.01f);
 		ImGui::ColorEdit4("light color", &directionalLightData->color.x);
 		directionalLightData->direction = Normalize(directionalLightData->direction);   // 毎フレーム正規化
-		ImGui::Checkbox("useMonsterBall", &useMonsterBall);
 
 		// ────────────────────────────────────────
 		// SphereとSpriteのUVTransform
@@ -1199,6 +1167,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui::DragFloat2("ModelUVScale", &uvTransformModel.scale.x, 0.01f, -10.0f, 10.0f);
 		ImGui::SliderAngle("ModelUVRotate", &uvTransformModel.rotate.z);
 		ImGui::Text("Lines: %u", primitiveDrawer.GetLineCount());
+
+
+		ImGui::Text("Materials: %u  Meshes: %u",
+			model.GetMaterialCount(), model.GetMeshCount());
+
 		ImGui::End();
 
 		// ────────────────────────────────────────
@@ -1255,8 +1228,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			nearClip	    0.1	                    これより近いものは映さない
 			farClip	        100.0	                これより遠いものは映さない
 		*/
-		transformationMatrixDataModel->WVP = MakeWVPMatrix(worldMatrixModel, viewMatrixModel, projectionMatrix); // これらの行列を掛け合わせる
-		transformationMatrixDataModel->World = worldMatrixModel;
 
 
 
@@ -1264,8 +1235,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// ＜3Dモデル＞　UVTransform行列を作る
 		// 座標変換の基本どおり Scale → Rotate → Translate (SRT) の順に掛ける
 		// ────────────────────────────────────────
-		Matrix4x4 uvTransformMatrixSphere = MakeAffineMatrix(uvTransformModel.scale, uvTransformModel.rotate, uvTransformModel.translate);
-		modelMaterialData->uvTransform = uvTransformMatrixSphere;
+		Matrix4x4 uvTransformMatrixModel = MakeAffineMatrix(uvTransformModel.scale, uvTransformModel.rotate, uvTransformModel.translate);
+		// 全マテリアルに同じ UV 変換を適用する（ImGui のスライダーが1組だけなので）
+		for (uint32_t i = 0; i < model.GetMaterialCount(); ++i) {
+			model.GetMaterialData(i)->uvTransform = uvTransformMatrixModel;
+		}
 
 		// ────────────────────────────────────────
 		// ＜スプライト＞　レンダ（クリップ空間まで変換）（２D）
@@ -1332,32 +1306,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// 平行光源はシーン共通なので、描画の最初に1回設定すればよい
 		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[3]を介して、 directionalLightResourceアドレスを渡す
 
+
 		// ────────────────────────────────────────
 		// モデルを描画する
+		//   マテリアル(root 0) / 座標変換(root 1) / テクスチャ(root 2) の設定と
+		//   DrawCall は Model::Draw の中
+		//   平行光源(root 3) はシーン共通なので上で1回設定済み
 		// ────────────────────────────────────────
-		//	モデルはテクスチャをImGuiで切り替えられる
+		model.Draw(worldMatrixModel, viewMatrixModel* projectionMatrix);
 
-		commandList->SetGraphicsRootConstantBufferView(0, modelMaterialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、sphereMaterialResourceアドレスを渡す
-		commandList->SetGraphicsRootDescriptorTable(
-			2, textureManager.GetSrvGpuHandle(useMonsterBall ? modelTextureIndex : uvCheckerTextureIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
-		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewModel);   // モデル用VBVを設定
-		commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceModel->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、TransformationMatrixResourceSphereアドレスを渡す
 
-		// 描画！(DrawCall/ドローコール)
-		// インデックスを持っているモデル(球)と、持っていないモデル(obj)で呼ぶ関数が変わる
-		/*
-		第1引数：読むインデックスの数。6個 ÷ 3 = 三角形2枚 = 四角形1枚
-		第2引数：インスタンス数。同じ形を何体描くか。今は1体
-		第3引数：インデックスバッファの何番目から読むか。先頭からなので0
-		第4引数：インデックスの値に足すオフセット。頂点バッファの先頭から使うので0
-		第5引数：SV_InstanceID の開始番号。インスタンシングしないので0
-		*/
-		if (indexResourceModel != nullptr) {
-			commandList->IASetIndexBuffer(&indexBufferViewModel);   // モデル用IBVを設定 (現在は自作モデルのみ）
-			commandList->DrawIndexedInstanced(UINT(modelData.indices.size()), 1, 0, 0, 0);
-		} else {
-			commandList->DrawInstanced(UINT(modelData.vertices.size()), 1, 0, 0);
-		}
 
 		// ────────────────────────────────────────
 		// スプライトを描画する

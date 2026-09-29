@@ -178,6 +178,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Logger.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MathUtility.cpp" />
+    <ClCompile Include="Model.cpp" />
     <ClCompile Include="PrimitiveDrawer.cpp" />
     <ClCompile Include="TextureManager.cpp" />
     <ClCompile Include="WinApp.cpp" />
@@ -231,6 +232,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Logger.h" />
     <ClInclude Include="MathUtility.h" />
     <ClInclude Include="Matrix4x4.h" />
+    <ClInclude Include="Model.h" />
+    <ClInclude Include="Object3dStructs.h" />
     <ClInclude Include="PrimitiveDrawer.h" />
     <ClInclude Include="TextureManager.h" />
     <ClInclude Include="Vector2.h" />
