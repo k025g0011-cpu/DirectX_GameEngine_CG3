@@ -334,20 +334,45 @@ ModelData LoadObjFile(const std::string& directoryPath, const std::string& filen
 				std::string vertexDefinition;    // "2/1/1" のような1頂点ぶんの定義
 				s >> vertexDefinition;
 
+				// ════════════════════════════════════════
 				// 「位置/UV/法線」の3つのIndexを '/' 区切りで分解する
+				//   obj の Index は1始まりなので、0 を「指定なし」の印として使える
+				//   例： "47/12/3" → {47, 12, 3}
+				//        "47//3"   → {47,  0, 3}   UV を持たないモデル（スザンヌ等）
+				//        "47"      → {47,  0, 0}   位置だけのモデル
+				// ════════════════════════════════════════
 				std::istringstream v(vertexDefinition);
-				uint32_t elementIndices[3];
+				uint32_t elementIndices[3] = { 0, 0, 0 };
 				for (int32_t element = 0; element < 3; ++element) {
 					std::string index;
 					std::getline(v, index, '/'); // 第3引数で区切り文字を'/'に指定
-					elementIndices[element] = std::stoi(index);  // 文字列→整数
+					// 空欄（"//" や、そもそも欄が無い）なら 0 のままにする
+					//   std::stoi("") は例外を投げるので、必ず中身を確認してから呼ぶ
+					if (!index.empty()) {
+						elementIndices[element] = std::stoi(index);  // 文字列→整数
+					}
 				}
 
+				// ════════════════════════════════════════
 				// Indexから実際の値を取り出して1頂点を組み立てる
 				// objのIndexは1始まりなので、配列の添字にするときは -1 する
+				// ════════════════════════════════════════
+				// 位置は必須
 				Vector3 position = positions[elementIndices[0] - 1];
-				Vector2 texcoord = texcoords[elementIndices[1] - 1];
-				Vector3 normal = normals[elementIndices[2] - 1];
+
+				// UV が無いモデルは (0,0) にしておく
+				//   テクスチャは白1x1になるので、どこを読んでも同じ色
+				Vector2 texcoord = { 0.0f, 0.0f };
+				if (elementIndices[1] != 0) {
+					texcoord = texcoords[elementIndices[1] - 1];
+				}
+
+				// 法線が無いモデルは (0,0,0)
+				//   ライティングは真っ黒になるが、落ちはしない
+				Vector3 normal = { 0.0f, 0.0f, 0.0f };
+				if (elementIndices[2] != 0) {
+					normal = normals[elementIndices[2] - 1];
+				}
 
 
 				// ════════════════════════════════════════
@@ -897,7 +922,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// モデルを用意する
 	// 使いたい方のコメントを外す（ModelDataを返すので以降のコードは共通）
 	// ════════════════════════════════════════════════════
-	ModelData modelData = LoadObjFile("resources", "multiMesh.obj");
+	ModelData modelData = LoadObjFile("resources", "axis.obj");
 	//ModelData modelData = CreateSphereModelData(16);
 
 	// ════════════════════════════════════════════════════
@@ -1330,7 +1355,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		// 描画！(DrawCall/ドローコール)
 
-		commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);                   // DrawInstanced → DrawIndexedInstanced
+		//commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);                   // DrawInstanced → DrawIndexedInstanced
 
 #pragma region  MyRegion
 		/*

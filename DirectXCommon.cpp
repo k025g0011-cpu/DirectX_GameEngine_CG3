@@ -444,7 +444,7 @@ void DirectXCommon::PreDraw() {
 	// ④ 画面をクリアする
 	// ────────────────────────────────────────────────────────────────
 	// 青っぽい色（RGBA）
-	float clearColor[] = { 0.1f, 0.25f, 0.5f, 1.0f };
+	float clearColor[] = { 0.0f,0.0f,0.0f,0.6f };
 	commandList_->ClearRenderTargetView(
 		rtvHandles_[backBufferIndex_], clearColor, 0, nullptr);
 
