@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "MathUtility.h"   // ← 実際のファイル名に合わせて修正
+#include "MathUtility.h"  
 
 // ================================================================
 // Object3d シェーダーとやり取りする構造体
