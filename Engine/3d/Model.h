@@ -16,11 +16,8 @@ class TextureManager;
 // ================================================================
 class Model {
 public:
-    // main.cpp の RootSignature の並び順に依存している
-    static constexpr uint32_t kRootParameterMaterial = 0;   // PS b0
-    static constexpr uint32_t kRootParameterTransform = 1;   // VS b0
-    static constexpr uint32_t kRootParameterTexture = 2;   // PS t0
 
+    // ルートパラメータ番号は Object3dPipeline が決める
     void Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
         const ModelData& modelData);
     void Draw(const Matrix4x4& worldMatrix, const Matrix4x4& viewProjectionMatrix);

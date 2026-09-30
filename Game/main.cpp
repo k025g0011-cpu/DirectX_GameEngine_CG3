@@ -27,6 +27,7 @@
 #include "CrashHandler.h"
 #include "ObjLoader.h"
 #include "PrimitiveModel.h"
+#include "Object3dPipeline.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -44,7 +45,6 @@
 
 // ════════════════════════════════════════════════════════════════════
 // TODO: ここに残っている Engine 側のコードを順に引っ越す
-//   [ ] R-B  RootSignature / PSO          → Engine/3d/Object3dPipeline
 //   [ ] R-C  スプライト一式                → Engine/2d/Sprite
 //   [ ] R-D  カメラ行列                    → Engine/3d/Camera
 //   [ ] R-G  ゲームの中身                  → Game/GameScene
@@ -195,260 +195,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	textureManager.Initialize(&dxCommon);
 
 
-	// 以降で使い回す HRESULT（元は DXGIFactory 生成時に宣言していた）
-	HRESULT hr{};
+
+	// ════════════════════════════════════════════════════════════════
+	// 3D描画パイプラインの初期化
+	//   RootSignature・InputLayout・シェーダー・PSO（ブレンド6種）を作る
+	// ════════════════════════════════════════════════════════════════
+	Object3dPipeline object3dPipeline;
+	object3dPipeline.Initialize(&dxCommon);
 
 
-
-	// ════════════════════════════════════════
-	// RootSignatureの生成
-	// シェーダとリソースをどう関連付けるかを示した受け渡し表。今回は中身なし
-	// ════════════════════════════════════════
-	// RootSignatureの設定
-	D3D12_ROOT_SIGNATURE_DESC descriptionRootSignature{}; // 設定を書き込む構造体
-	descriptionRootSignature.Flags =
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT; // 「InputAssembler（頂点入力）を使ってよい」という許可
-
-
-	// RootParameter作成。複数設定できるので配列。シェーダーのレジスタの数に応じて上昇
-	//  rootParameters[0] -> PS.register(b0) : rootParameters[1] -> VS.register(b0) : rootParameters[2] -> PS.register(t0~)
-	D3D12_ROOT_PARAMETER rootParameters[4] = {};
-
-	// Material
-	// -----------------------------------------
-	rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
-	rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  // PixelShaderで使う
-	rootParameters[0].Descriptor.ShaderRegister = 0;                     // レジスタ番号0とバインド
-
-	// TransformationMatrix
-	// -----------------------------------------
-	rootParameters[1].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
-	rootParameters[1].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX; // VertexShaderで使う
-	rootParameters[1].Descriptor.ShaderRegister = 0;                     // レジスタ番号0とバインド
-
-	// Texture
-	// -----------------------------------------
-	D3D12_DESCRIPTOR_RANGE descriptorRange[1] = {}; // register(t0)
-	/*
-	1回の描画（1つのピクセル）で複数のテクスチャを読みたいときに、registerの数が増えていく（t1,t2,t3・・・)>>> 伴ってdescriptorRangeの要素も増える
-	* 同時に複数枚使う代表例
-	   ＜用途＞	                    ＜同時に読むテクスチャ＞
-	  PBR（リアルな質感）	        ベースカラー + 法線マップ + ラフネス/メタリック（+ AO）→ 3〜4枚
-	  IBL（環境光）	            ベースカラー + 環境マップ（キューブマップ）+ BRDF LUT など
-	  影	                        ベースカラー + シャドウマップ
-	  エフェクト	                ベースカラー + ディゾルブ用のノイズ画像 / マスク画像
-	  地形	                    草・土・岩の画像 + どこに何を塗るかのブレンド用画像
-	  ポストエフェクト	            描画結果の画面 + 深度（被写界深度など）
-	*/
-	descriptorRange[0].BaseShaderRegister = 0;  // 0から始まる（何番のレジスターから始まるか、>>今回はt0だから0)
-	descriptorRange[0].NumDescriptors = 1;  // 数は1つ（同タイプのレジスターの数、>>今回はt0のみ）
-	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV; // SRVを使う
-	descriptorRange[0].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND; // Offsetを自動計算
-
-
-	rootParameters[2].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE; // DescriptorTableを使う
-	rootParameters[2].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
-	rootParameters[2].DescriptorTable.pDescriptorRanges = descriptorRange;  // Tableの中身の配列を指定　(！！実質ここでレジスタ指定！！）
-	rootParameters[2].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange); // Tableで利用する数
-
-	// DirectionalLight
-	// -----------------------------------------
-	rootParameters[3].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
-	rootParameters[3].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  // PixelShaderで使う
-	rootParameters[3].Descriptor.ShaderRegister = 1;                     // レジスタ番号1とバインド
-
-	descriptionRootSignature.pParameters = rootParameters;               // ルートパラメータ配列へのポインタ
-	descriptionRootSignature.NumParameters = _countof(rootParameters);   // 配列の長さ
-	// descriptionRootSignature が　パラメーターが格納されていく箱（パラメーターが増えるごとに大きくなる）
-
-
-	// ════════════════════════════════════════
-	// サンプラー設定
-	// ════════════════════════════════════════
-	D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {}; // register(s0)
-	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR; // バイリニアフィルタ
-	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;   // 0~1の範囲外をリピート
-	staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	staticSamplers[0].AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	staticSamplers[0].ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER; // 比較しない
-	staticSamplers[0].MaxLOD = D3D12_FLOAT32_MAX;   // ありったけのMipmapを使う
-	staticSamplers[0].ShaderRegister = 0;   // レジスタ番号0を使う
-	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
-	descriptionRootSignature.pStaticSamplers = staticSamplers;
-	descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
-
-
-#pragma region MyRegion
-	/*
-	 ＜記号＞	    ＜由来＞	                    ＜何を置くか＞	                        ＜HLSL の例＞
-	   b	    Buffer（Constant Buffer）	CPU から渡す定数（行列・色・ライト）	    ConstantBuffer<Material> gMaterial : register(b0);
-	   t	    Texture	                    シェーダが読むリソース（SRV）	        Texture2D<float32_t4> gTexture : register(t0);
-	   s	    Sampler	                    テクスチャの読み方（補間・繰り返し）	    SamplerState gSampler : register(s0);
-	   u	    Unordered Access（UAV）	    シェーダから読み書きするリソース	        RWTexture2D<float4> gOutput : register(u0);
-
-	*/
-#pragma endregion
-	// シリアライズしてバイナリにする
-	ComPtr<ID3DBlob> signatureBlob = nullptr; // 成功したときのバイナリを受け取る変数
-	ComPtr<ID3DBlob> errorBlob = nullptr; // 失敗したときのエラーメッセージを受け取る変数
-
-	// そのままGPUなどに渡しても、相手はポインタの先が見えないので、指している先の中身まで全部たどって、1本のバイト列に詰め直す！！！　-> バイナリ
-	hr = D3D12SerializeRootSignature(
-		&descriptionRootSignature, // 設計図
-		D3D_ROOT_SIGNATURE_VERSION_1, // 設計図の書式のバージョン
-		&signatureBlob, // 成功時のバイナリアドレスを入れる箱
-		&errorBlob); // 失敗時のエラー文を入れる箱
-
-	// エラー確認
-	if (FAILED(hr)) {
-		Log(logStream, reinterpret_cast<char*>(errorBlob->GetBufferPointer()));
-		assert(false);
-	}
-	// バイナリを元に生成
-	ComPtr<ID3D12RootSignature> rootSignature = nullptr;
-	hr = device->CreateRootSignature(
-		0,                                  // nodeMask。GPU が1台なら 0
-		signatureBlob->GetBufferPointer(),  // バイナリ本体の場所
-		signatureBlob->GetBufferSize(),     // バイナリのバイト数
-		IID_PPV_ARGS(&rootSignature));      // 完成品を受け取る箱アドレス
-	assert(SUCCEEDED(hr));
-
-
-	// ════════════════════════════════════════
-	// InputLayoutの設定
-	// VertexShaderへ渡す頂点データがどのようなものかを指定する
-	// ════════════════════════════════════════
-	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};                     // 頂点の1つの要素（メンバ1つ分）の説明の配列。positionとtexcoordで２
-
-#pragma region MyRegion
-	//   HLSL の POSITION0 を、名前 "POSITION" と番号 0 に分けて指定
-	//   番号が分かれているのは、同じ種類のデータを複数持つことがあるからです。
-	/*
-		<HLSL 側>	                <C++ 側>	        <値>
-		POSITION	                SemanticName	"POSITION"
-		0（POSITION0 の数字部分）	    SemanticIndex	 0
-
-		<hlsl>
-		float32_t2 uv0 : TEXCOORD0;   // SemanticName = "TEXCOORD", SemanticIndex = 0
-		float32_t2 uv1 : TEXCOORD1;   // SemanticName = "TEXCOORD", SemanticIndex = 1
-	*/
-#pragma endregion
-
-	inputElementDescs[0].SemanticName = "POSITION";  // 位置座標                   
-	inputElementDescs[0].SemanticIndex = 0;
-	inputElementDescs[0].Format = DXGI_FORMAT_R32G32B32_FLOAT;           //「このデータは何ビットの何型が何個か(RGBAで表現）」  <<<<float が 4つ = float32_t4 = 16バイト 
-	inputElementDescs[0].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;  // (この要素は、頂点1個の先頭から何バイト目にあるか = 前の要素の直後に置いて);
-	inputElementDescs[1].SemanticName = "TEXCOORD";  // UV座標                      
-	inputElementDescs[1].SemanticIndex = 0;
-	inputElementDescs[1].Format = DXGI_FORMAT_R32G32_FLOAT;           //「このデータは何ビットの何型が何個か(RGBAで表現）」  <<<<float が 4つ = float32_t4 = 16バイト 
-	inputElementDescs[1].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-	inputElementDescs[2].SemanticName = "NORMAL";  // UV座標                      
-	inputElementDescs[2].SemanticIndex = 0;
-	inputElementDescs[2].Format = DXGI_FORMAT_R32G32B32_FLOAT;           //「このデータは何ビットの何型が何個か(RGBAで表現）」  <<<<float が 4つ = float32_t4 = 16バイト 
-	inputElementDescs[2].AlignedByteOffset = D3D12_APPEND_ALIGNED_ELEMENT;
-
-	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};                               // 説明書の表紙。「要素の配列はここから○個」
-#pragma region  MyRegion
-	/*
-	*
-	inputLayoutDesc は、
-		「頂点1個の形の説明は、この配列のここから○行ぶんだよ」
-
-		*/
-#pragma endregion
-
-	inputLayoutDesc.pInputElementDescs = inputElementDescs;                 // 要素の配列の先頭アドレス              
-	inputLayoutDesc.NumElements = _countof(inputElementDescs);              // 要素の数。_countof で自動計算（今は 1）
-
-
-
-	//////////////////////////////////////////////////////////////////////////////三角形の描画ができたらここからの項目ちょっといじってみて by過去の自分
-	// ════════════════════════════════════════
-	// BlendStateの設定
-	// PixelShaderからの出力を画面にどのように書き込むかを設定する
-	// ════════════════════════════════════════
-	D3D12_BLEND_DESC blendDesc{}; //PS が「このピクセルは白」と出力したとき、すでに画面にある色（青いクリア色）とどう合わせるかを決めます。
-	// すべての色要素を書き込む
-	blendDesc.RenderTarget[0].RenderTargetWriteMask =
-		D3D12_COLOR_WRITE_ENABLE_ALL;
-
-
-
-	// ════════════════════════════════════════
-	// RasterizerStateの設定
-	// 三角形の内部をピクセルに分解する処理(Rasterizer)に対する設定
-	// ════════════════════════════════════════
-#pragma region  MyRegion
-/*
-<< Rasterizerとは
-・VS が出力した三角形の頂点3つを受け取り、「画面上のどのピクセルがその三角形の内側か
-
-<< GPU は頂点を並べた順番で表裏を判定します。DirectX の既定は次のとおりです。>>
-
-・画面上で時計回りに並んだ三角形    → 表（描かれる）
-・画面上で反時計回りに並んだ三角形  → 裏（BACK なら捨てられる）
-
-※三角形を描いたのに何も出ないときは、頂点の順番を疑ってください。
-	デバッグ中は一時的に CULL_MODE_NONE にして、表示されるか確かめるのが定番の切り分けです。
-
-*/
-#pragma endregion
-	D3D12_RASTERIZER_DESC rasterizerDesc{};
-	// 裏面を表示しない
-	rasterizerDesc.CullMode = D3D12_CULL_MODE_BACK;
-	// 三角形の中を塗りつぶす
-	rasterizerDesc.FillMode = D3D12_FILL_MODE_SOLID;
-
-
-	// ════════════════════════════════════════
-	// DepthStencilStateの設定
-	// PixelShaderからの出力を画面にどのように書き込むかを設定する
-	// ════════════════════════════════════════
-	D3D12_DEPTH_STENCIL_DESC depthStencilDesc{};
-	depthStencilDesc.DepthEnable = true;                            // 深度テストを有効にする
-	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;   // 深度を書き込む
-	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;  // 近い(または同じ)なら描画する
-
-
-	// ════════════════════════════════════════
-	// Shaderをコンパイルする(各シェーダーをGPUが読めるように翻訳）
-	// ════════════════════════════════════════
-	ComPtr<IDxcBlob> vertexShaderBlob = dxCommon.CompileShader(L"Object3d.VS.hlsl", L"vs_6_0");
-	assert(vertexShaderBlob != nullptr);
-
-	ComPtr<IDxcBlob> pixelShaderBlob = dxCommon.CompileShader(L"Object3d.PS.hlsl", L"ps_6_0");
-	assert(pixelShaderBlob != nullptr);
-
-
-	// ════════════════════════════════════════
-	// PSOを生成する（すべての設計書の集大成！！！！！！！！！！！！！）
-	// ════════════════════════════════════════
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC graphicsPipelineStateDesc{};
-	graphicsPipelineStateDesc.pRootSignature = rootSignature.Get();    // RootSignature
-	graphicsPipelineStateDesc.InputLayout = inputLayoutDesc;           // InputLayout
-	graphicsPipelineStateDesc.VS = { vertexShaderBlob->GetBufferPointer(),
-		vertexShaderBlob->GetBufferSize() };                           // VertexShader
-	graphicsPipelineStateDesc.PS = { pixelShaderBlob->GetBufferPointer(),
-		pixelShaderBlob->GetBufferSize() };                            // PixelShader
-	graphicsPipelineStateDesc.BlendState = blendDesc;                  // BlendState
-	graphicsPipelineStateDesc.RasterizerState = rasterizerDesc;        // RasterizerState
-	// 書き込むRTVの情報
-	graphicsPipelineStateDesc.NumRenderTargets = 1; // PixelShaderOutput の SV_TARGET0 に対応
-	graphicsPipelineStateDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB; // RTV を作ったときの rtvDesc.Format と一致させる必要があります。
-	// 利用するトポロジ(形状)のタイプ。三角形
-	graphicsPipelineStateDesc.PrimitiveTopologyType =
-		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;     // POINT,LINEなどもある
-	// どのように画面に色を打ち込むかの設定(気にしなくて良い)
-	graphicsPipelineStateDesc.SampleDesc.Count = 1; // SwapChain で SampleDesc.Count = 1 にしたのと揃えています
-	graphicsPipelineStateDesc.SampleMask = D3D12_DEFAULT_SAMPLE_MASK;
-	graphicsPipelineStateDesc.DepthStencilState = depthStencilDesc;
-	graphicsPipelineStateDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-
-	// 実際に生成
-	ComPtr<ID3D12PipelineState> graphicsPipelineState = nullptr;
-	hr = device->CreateGraphicsPipelineState(&graphicsPipelineStateDesc,
-		IID_PPV_ARGS(&graphicsPipelineState)); // 生成したPSOのアドレスをgraphicsPipelineStateに格納
-	assert(SUCCEEDED(hr));
 
 	// ════════════════════════════════════════════════════
 	// モデルを用意する
@@ -840,28 +595,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		primitiveDrawer.Draw(viewMatrixModel * projectionMatrix);
 
 
-		// RootSignatureを設定。PSOに設定しているけど別途設定が必要
-		commandList->SetGraphicsRootSignature(rootSignature.Get());
-		commandList->SetPipelineState(graphicsPipelineState.Get());   // PSOを設定
-		// 形状を設定。PSOに設定しているものとはまた別。同じものを設定すると考えておけば良い
-		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-#pragma region  MyRegion
-		/*
-		＜値＞	        ＜頂点の使い方＞
-		TRIANGLELIST	3つずつ区切って、独立した三角形にする
-		TRIANGLESTRIP	1つずらしながら、前の2頂点と組み合わせて連続した三角形にする
-		*/
-#pragma endregion
+		// パイプラインを設定する（RootSignature + PSO + トポロジ）
+		object3dPipeline.SetPipeline(); // Object3dPipeline::BlendMode::Normal
 
-#pragma region  MyRegion
-		/*
-		rootParameters配列の０番目に紐付けられたシェーダーのレジスタに、         （今回はPSシェーダーのgMaterial:b0)
-		第二引数のリソース本体のアドレスを送るぜよ                           （ここにコードで指定した色データが入っており、シェーダのmain関数へ）
-		*/
-#pragma endregion
 
 		// 平行光源はシーン共通なので、描画の最初に1回設定すればよい
-		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[3]を介して、 directionalLightResourceアドレスを渡す
+		commandList->SetGraphicsRootConstantBufferView(Object3dPipeline::kRootParameterLight, directionalLightResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[3]を介して、 directionalLightResourceアドレスを渡す
 
 
 		// ────────────────────────────────────────
@@ -878,12 +617,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// スプライトを描画する
 		// ────────────────────────────────────────
 
-		commandList->SetGraphicsRootConstantBufferView(0, spriteMaterialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、spriteMaterialResourceアドレスを渡す
+		commandList->SetGraphicsRootConstantBufferView(Object3dPipeline::kRootParameterMaterial, spriteMaterialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、spriteMaterialResourceアドレスを渡す
 		commandList->SetGraphicsRootDescriptorTable(
-			2, textureManager.GetSrvGpuHandle(uvCheckerTextureIndex));
+			Object3dPipeline::kRootParameterTexture, textureManager.GetSrvGpuHandle(uvCheckerTextureIndex));
 		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);   // スプライト用VBVを設定
 		commandList->IASetIndexBuffer(&indexBufferViewSprite);            // スプライト用IBVを設定
-		commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、transformationMatrixResourceSpriteアドレスを渡す
+		commandList->SetGraphicsRootConstantBufferView(Object3dPipeline::kRootParameterTransform, transformationMatrixResourceSprite->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、transformationMatrixResourceSpriteアドレスを渡す
 
 		// 描画！(DrawCall/ドローコール)
 

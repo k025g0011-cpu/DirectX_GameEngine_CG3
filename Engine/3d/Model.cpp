@@ -5,6 +5,7 @@
 
 #include "DirectXCommon.h"
 #include "TextureManager.h"
+#include "Object3dPipeline.h" 
 
 // ════════════════════════════════════════════════════════════════════
 // 初期化
@@ -114,7 +115,7 @@ void Model::Draw(const Matrix4x4& worldMatrix, const Matrix4x4& viewProjectionMa
         commandList->IASetIndexBuffer(&indexBufferView_);
     }
     commandList->SetGraphicsRootConstantBufferView(
-        kRootParameterTransform, transformationMatrixResource_->GetGPUVirtualAddress());
+        Object3dPipeline::kRootParameterTransform, transformationMatrixResource_->GetGPUVirtualAddress());
 
     // ────────────────────────────────────────
     // ② Mesh ごとに、マテリアルを切り替えて描く
@@ -124,9 +125,9 @@ void Model::Draw(const Matrix4x4& worldMatrix, const Matrix4x4& viewProjectionMa
         const MaterialResource& material = materials_[mesh.materialIndex];
 
         commandList->SetGraphicsRootConstantBufferView(
-            kRootParameterMaterial, material.resource->GetGPUVirtualAddress());// シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
+            Object3dPipeline::kRootParameterMaterial, material.resource->GetGPUVirtualAddress());// シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
         commandList->SetGraphicsRootDescriptorTable(
-            kRootParameterTexture, textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
+            Object3dPipeline::kRootParameterTexture, textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
 
         // 描画！(DrawCall/ドローコール)
         // インデックスを持っているモデル(球)と、持っていないモデル(obj)で呼ぶ関数が変わる

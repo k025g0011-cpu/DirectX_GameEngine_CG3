@@ -32,12 +32,13 @@ PixelShaderOutput main(VertexShaderOutput input)
     if (gMaterial.enableLighting != 0)
     { // Lightingする場合
         float NdotL = dot(normalize(input.normal), -gDirectionalLight.direction);
-        
-        // 片方を消すことで切り替え
         float cos = pow(NdotL * 0.5f + 0.5f, 2.0f); // Half Lambert
-        //float cos = saturate(NdotL);                 // Lambert
         
-        output.color = gMaterial.color * textureColor * gDirectionalLight.color * cos * gDirectionalLight.intensity;
+        // 色（rgb）にだけライティングを掛ける
+        output.color.rgb = gMaterial.color.rgb * textureColor.rgb
+                         * gDirectionalLight.color.rgb * cos * gDirectionalLight.intensity;
+        // α値はライティングの影響を受けない。マテリアルとテクスチャだけで決まる
+        output.color.a = gMaterial.color.a * textureColor.a;
     }
     else
     { // Lightingしない場合
