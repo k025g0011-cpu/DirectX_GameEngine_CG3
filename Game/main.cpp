@@ -24,6 +24,7 @@
 #include "TextureManager.h" 
 #include "Model.h"
 #include "Object3dStructs.h"
+#include "CrashHandler.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -31,46 +32,39 @@
 #include "externals/imgui/imgui_impl_win32.h"
 #endif
 
-// Debug用のあれやこれやを使えるようにする
-#include <dbghelp.h>
-// StringCchPrintfWを使うため
-#include <strsafe.h>
-
-// リソースリークチェック用
-#include <dxgidebug.h>
 // ComPtr（COMオブジェクトの参照カウントを自動で管理してくれるクラス）用
 #include <wrl.h>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "Dbghelp.lib")
-#pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
+
+
+// ════════════════════════════════════════════════════════════════════
+// TODO: ここに残っている Engine 側のコードを順に引っ越す
+//   [ ] R-A  LoadObjFile 系               → Engine/loader/ObjLoader
+//   [ ] R-A  CreateSphereModelData        → Engine/loader/PrimitiveModel
+//   [ ] R-B  RootSignature / PSO          → Engine/3d/Object3dPipeline
+//   [ ] R-C  スプライト一式                → Engine/2d/Sprite
+//   [ ] R-D  カメラ行列                    → Engine/3d/Camera
+//   [ ] R-G  ゲームの中身                  → Game/GameScene
+// ════════════════════════════════════════════════════════════════════
+
+
+
+
+
+
+
+
+
+
 
 // ════════════════════════════════════════
 // Microsoft::WRL::ComPtr は毎回書くと長いので、ComPtr と短縮して使えるようにする
 // ※ using namespace ではなく、必要な名前だけを引き込むこと（名前衝突を防ぐため）
 // ════════════════════════════════════════
 using Microsoft::WRL::ComPtr;
-
-// ════════════════════════════════════════
-// D3DResourceLeakChecker
-// WinMainの先頭でインスタンスを作ることで「最初に構築されたものは最後に破棄される」
-// というC++の性質を利用し、すべてのComPtrが解放された後にリークチェックを行う
-// ════════════════════════════════════════
-struct D3DResourceLeakChecker {
-	~D3DResourceLeakChecker()
-	{
-		// 解放し忘れたオブジェクトが残っていないか、DXGIに問い合わせる
-		ComPtr<IDXGIDebug1> debug;
-		if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&debug)))) {
-			debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_APP, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
-		}
-	}
-};
-
 
 
 
@@ -83,79 +77,6 @@ struct LineVertex {   // 全体＜28＞バイト
 	Vector4 color;      // 色   (float<4> * 4) = 16バイト
 };
 
-
-
-// string -> wstring
-std::wstring ConvertString(const std::string& str) {
-	if (str.empty()) {
-		return std::wstring();
-	}
-
-	auto sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(&str[0]), static_cast<int>(str.size()), NULL, 0);
-	if (sizeNeeded == 0) {
-		return std::wstring();
-	}
-	std::wstring result(sizeNeeded, 0);
-	MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(&str[0]), static_cast<int>(str.size()), &result[0], sizeNeeded);
-	return result;
-}
-
-// wstring -> string
-std::string ConvertString(const std::wstring& str) {
-	if (str.empty()) {
-		return std::string();
-	}
-
-	auto sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), NULL, 0, NULL, NULL);
-	if (sizeNeeded == 0) {
-		return std::string();
-	}
-	std::string result(sizeNeeded, 0);
-	WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), result.data(), sizeNeeded, NULL, NULL);
-	return result;
-}
-
-// ostreamを引数に追加して、ファイルへ書き出すように変更
-void Log(std::ostream& os, const std::string& message) {
-	os << message << std::endl;
-	OutputDebugStringA((message + "\n").c_str());
-}
-
-// wstring用のLog関数もostreamを受け取るように変更
-void Log(std::ostream& os, const std::wstring& message) {
-	// wstringからstringに変換して、
-	// stringの方のLog関数を呼ぶ
-	Log(os, ConvertString(message));
-}
-
-// ════════════════════════════════════════
-// CrashHandler
-// 誰もSEHの例外を捕捉しなかった場合に実行され、ダンプファイルを出力する
-// ════════════════════════════════════════
-static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception) {
-	// 時刻を取得して、時刻を名前に入れたファイルを作成。Dumpsディレクトリ以下に出力
-	SYSTEMTIME time;
-	GetLocalTime(&time);
-	wchar_t filePath[MAX_PATH] = { 0 };
-	CreateDirectory(L"./Dumps", nullptr);
-	StringCchPrintfW(filePath, MAX_PATH, L"./Dumps/%04d-%02d%02d-%02d%02d.dmp",
-		time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute);
-	HANDLE dumpFileHandle = CreateFile(filePath, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_WRITE | FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
-	// processId(このexeのId)とクラッシュ(例外)の発生したthreadIdを取得
-	DWORD processId = GetCurrentProcessId();
-	DWORD threadId = GetCurrentThreadId();
-	// 設定情報を入力
-	MINIDUMP_EXCEPTION_INFORMATION minidumpInformation{ 0 };
-	minidumpInformation.ThreadId = threadId;
-	minidumpInformation.ExceptionPointers = exception;
-	minidumpInformation.ClientPointers = TRUE;
-	// Dumpを出力。MiniDumpNormalは最低限の情報を出力するフラグ
-	MiniDumpWriteDump(GetCurrentProcess(), processId, dumpFileHandle,
-		MiniDumpNormal, &minidumpInformation, nullptr, nullptr);
-	// 他に関連づけられているSEH例外ハンドラがあれば実行。通常はプロセスを終了する
-	return EXCEPTION_EXECUTE_HANDLER;
-}
 
 
 // ════════════════════════════════════════
@@ -590,13 +511,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ════════════════════════════════════════
 	D3DResourceLeakChecker leakCheck;
 
-	// COMの初期化（WinMainの一番最初）
-	CoInitializeEx(0, COINIT_MULTITHREADED);
-
-
-	// 誰も捕捉しなかった場合に(Unhandled)、捕捉する関数を登録
-	// main関数がはじまってすぐに登録すると良い
-	SetUnhandledExceptionFilter(ExportDump);
+	// クラッシュ時にダンプを出力するよう登録する（できるだけ早い段階で）
+	RegisterCrashHandler();
 
 	// ログのディレクトリを用意 (image_247d6d)
 	std::filesystem::create_directory("logs");
