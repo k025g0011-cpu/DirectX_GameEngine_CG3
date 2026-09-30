@@ -107,4 +107,7 @@ void DebugCamera::Update() {
 
 	// ワールド行列の逆行列をビュー行列に代入する
 	viewMatrix_ = Inverse(worldMatrix);
+
+	// ビュー×射影を合成しておく（Camera と同じ窓口を持たせる）
+	viewProjectionMatrix_ = viewMatrix_ * projectionMatrix_;
 }

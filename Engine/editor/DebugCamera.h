@@ -33,6 +33,8 @@ public:
 	// 短く中身が変わらないものはヘッダに直接書いてよい（暗黙にinline扱い）
 	const Matrix4x4& GetViewMatrix() const { return viewMatrix_; }
 	const Matrix4x4& GetProjectionMatrix() const { return projectionMatrix_; }
+	/// <summary>ビュー行列 × 射影行列。描画時はこれを渡す</summary>
+	const Matrix4x4& GetViewProjectionMatrix() const { return viewProjectionMatrix_; }  
 
 	// ImGui表示用
 	const Vector3& GetTranslation() const { return translation_; }
@@ -56,6 +58,7 @@ private:
 	Vector3 translation_{};
 	Matrix4x4 viewMatrix_{};
 	Matrix4x4 projectionMatrix_{};
+	Matrix4x4 viewProjectionMatrix_{};  
 
 	// ───── 操作感度 ─────
 	float rotateSpeed_ = 0.005f;   // マウス1ピクセルあたりのラジアン

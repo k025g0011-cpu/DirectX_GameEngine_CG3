@@ -3,17 +3,11 @@
 #include <string>
 #include <filesystem>
 #include <fstream>
-#include <sstream> 
 #include <chrono>
-#include <cmath> 
-#include <cstring> 
 #include <format>
 #include <d3d12.h>
-#include <dxgi1_6.h>
 #include <cassert>
-#include <dxcapi.h>
 #include <vector>
-#include <numbers>
 #include "MathUtility.h"
 #include "Input.h"
 #include "DebugCamera.h"
@@ -28,6 +22,8 @@
 #include "ObjLoader.h"
 #include "PrimitiveModel.h"
 #include "Object3dPipeline.h"
+#include "Sprite.h"
+#include "Camera.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -38,16 +34,17 @@
 // ComPtr（COMオブジェクトの参照カウントを自動で管理してくれるクラス）用
 #include <wrl.h>
 
-#pragma comment(lib, "d3d12.lib")
-#pragma comment(lib, "dxgi.lib")
-#pragma comment(lib, "dxcompiler.lib")
 
 
 // ════════════════════════════════════════════════════════════════════
 // TODO: ここに残っている Engine 側のコードを順に引っ越す
-//   [ ] R-C  スプライト一式                → Engine/2d/Sprite
-//   [ ] R-D  カメラ行列                    → Engine/3d/Camera
+//   [ ] R-E  ModelInstance（複数体描画）
+//   [ ] R-F  ModelManager（モデルの共有）
 //   [ ] R-G  ゲームの中身                  → Game/GameScene
+//   ────────── そのうち ──────────
+//   [ ] 平行光源                          → Engine/3d/DirectionalLightObject
+//   [ ] ImGui の初期化・終了               → Engine/editor/ImGuiManager
+//   [ ] DrawGrid                          → Engine/editor/GridRenderer
 // ════════════════════════════════════════════════════════════════════
 
 
@@ -65,19 +62,6 @@
 // ※ using namespace ではなく、必要な名前だけを引き込むこと（名前衝突を防ぐため）
 // ════════════════════════════════════════
 using Microsoft::WRL::ComPtr;
-
-
-
-// ════════════════════════════════════════
-// 線描画用の頂点
-//   位置と色だけ。テクスチャ座標も法線も使わない
-// ════════════════════════════════════════
-struct LineVertex {   // 全体＜28＞バイト
-	Vector3 position;   // 座標 (float<3> * 3) = 12バイト  
-	Vector4 color;      // 色   (float<4> * 4) = 16バイト
-};
-
-
 
 
 // ════════════════════════════════════════
@@ -155,21 +139,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	winApp.Initialize();
 
 
-	// ════════════════════════════════════════
-	// デバッグレイヤーの有効化
-	// 必ずDevice生成より前に行う(後からでは適用されない)
-	// ════════════════════════════════════════
-#ifdef _DEBUG
-	ComPtr<ID3D12Debug1> debugController = nullptr;
-	if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)))) {
-		// デバッグレイヤーを有効化する
-		debugController->EnableDebugLayer();
-		// さらにGPU側でもチェックを行うようにする
-		debugController->SetEnableGPUBasedValidation(TRUE);
-	}
-#endif
-
-
 	// 新しく作ったLog関数を使ってファイル出力とデバッグ出力を同時に行う
 	Log(logStream, "hello DirectX");
 
@@ -223,103 +192,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// Transform変数を作る
 	Transform transformModel{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
-	// カメラのTransformを作る。z = -5 の位置で z+ 方向を向いているカメラ
-	Transform cameraTransform{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -5.0f} };
-
-
-
-
-	// ════════════════════════════════════════════════════
-	// スプライトの VertexResource を生成する
-	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> vertexResourceSprite = dxCommon.CreateBufferResource(sizeof(VertexData) * 4);
-
-	// ════════════════════════════════════════════════════
-	// スプライトの VertexBufferView を作成する
-	// ════════════════════════════════════════════════════
-	// 頂点バッファビューを作成する
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
-	// リソースの先頭のアドレスから使う
-	vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
-	// 使用するリソースのサイズは頂点6つ分のサイズ
-	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 4;
-	// 1頂点あたりのサイズ
-	vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
-
-
-	// ════════════════════════════════════════════════════
-	// スプライトの IndexResource を生成する
-	// ════════════════════════════════════════════════════
-	ComPtr<ID3D12Resource> indexResourceSprite = dxCommon.CreateBufferResource(sizeof(uint32_t) * 6);
-
-	// ════════════════════════════════════════════════════
-	// スプライトの indexBufferView を生成する
-	// ════════════════════════════════════════════════════
-	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
-	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
-	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6;
-	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;   // インデックス1つが32bit整数
-
-
-	// ════════════════════════════════════════════════════
-	// スプライトの頂点データを書き込む
-	// ════════════════════════════════════════════════════
-	VertexData* vertexDataSprite = nullptr;
-	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSprite));
-
-	// [0] 左下
-	vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f };
-	vertexDataSprite[0].texcoord = { 0.0f, 1.0f };
-	vertexDataSprite[0].normal = { 0.0f, 0.0f, -1.0f };
-	// [1] 左上
-	vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f };
-	vertexDataSprite[1].texcoord = { 0.0f, 0.0f };
-	vertexDataSprite[1].normal = { 0.0f, 0.0f, -1.0f };
-	// [2] 右下
-	vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f };
-	vertexDataSprite[2].texcoord = { 1.0f, 1.0f };
-	vertexDataSprite[2].normal = { 0.0f, 0.0f, -1.0f };
-	// [3] 右上
-	vertexDataSprite[3].position = { 640.0f, 0.0f, 0.0f };
-	vertexDataSprite[3].texcoord = { 1.0f, 0.0f };
-	vertexDataSprite[3].normal = { 0.0f, 0.0f, -1.0f };
-
-	// ２か所の頂点が重なってるのでデータを再利用することになる
-
-
-	// ════════════════════════════════════════════════════
-	// スプライトのインデックスデータを書き込む
-	// ════════════════════════════════════════════════════
-	uint32_t* indexDataSprite = nullptr;
-	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSprite));
-	indexDataSprite[0] = 0;  indexDataSprite[1] = 1;  indexDataSprite[2] = 2;   // 1枚目：左下→左上→右下
-	indexDataSprite[3] = 1;  indexDataSprite[4] = 3;  indexDataSprite[5] = 2;   // 2枚目：左上→右上→右下
-
 
 	// ════════════════════════════════════════
-	// Sprite用のTransformationMatrixのResourceとTransformを作る
+	// カメラ
+	//   既定で z = -5 の位置から z+ 方向を見る
 	// ════════════════════════════════════════
-	ComPtr<ID3D12Resource> transformationMatrixResourceSprite = dxCommon.CreateBufferResource(sizeof(TransformationMatrix));
-	TransformationMatrix* transformationMatrixDataSprite = nullptr;
-	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
-	transformationMatrixDataSprite->WVP = MakeIdentity4x4();
-	transformationMatrixDataSprite->World = MakeIdentity4x4();
-	// CPUで動かす用のTransform
-	Transform transformSprite{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
-
-
-
-	// ════════════════════════════════════════
-	// グリッドのWVP行列用（transformationMatrix）リソース
-	// ════════════════════════════════════════
-	ComPtr<ID3D12Resource> transformationMatrixResourceGrid =
-		dxCommon.CreateBufferResource(sizeof(TransformationMatrix));
-
-	TransformationMatrix* transformationMatrixDataGrid = nullptr;
-	transformationMatrixResourceGrid->Map(0, nullptr,
-		reinterpret_cast<void**>(&transformationMatrixDataGrid));
-	transformationMatrixDataGrid->WVP = MakeIdentity4x4();
-	transformationMatrixDataGrid->World = MakeIdentity4x4();
+	Camera camera;
+	camera.Initialize();
 
 
 	// ════════════════════════════════════════
@@ -339,18 +218,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	{ 0.0f, 0.0f, 0.0f },
 	{ 0.0f, 0.0f, 0.0f },
 	};
-	// -----------------------------------------
-	// スプライト用マテリアル
-	// -----------------------------------------
-	ComPtr<ID3D12Resource> spriteMaterialResource = dxCommon.CreateBufferResource(sizeof(Material));
-	// マテリアルにデータを書き込む
-	Material* spriteMaterialData = nullptr;
-	// 書き込むためのアドレスを取得
-	spriteMaterialResource->Map(0, nullptr, reinterpret_cast<void**>(&spriteMaterialData)); // CPUからでもデータを書ける住所をmaterialDataに受け取る
-	// 今回は赤を書き込んでみる
-	spriteMaterialData->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };   // 白
-	spriteMaterialData->enableLighting = false;                      // Lightingしない
-	spriteMaterialData->uvTransform = MakeIdentity4x4();
+	
 
 	Transform uvTransformSprite{ // UV移動用
 	{ 1.0f, 1.0f, 1.0f },
@@ -366,7 +234,13 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// ════════════════════════════════════════════════════════════════
 	uint32_t uvCheckerTextureIndex = textureManager.Load("resources/uvChecker.png");
 
-
+	// ════════════════════════════════════════════════════════════════
+	// スプライトを作る
+	//   頂点・インデックス・定数バッファ・行列は Sprite が中で用意する
+	//   ※ テクスチャ番号が要るので、Load より後でなければならない
+	// ════════════════════════════════════════════════════════════════
+	Sprite sprite;
+	sprite.Initialize(&dxCommon, &textureManager, uvCheckerTextureIndex, { 640.0f, 360.0f });
 
 	// ════════════════════════════════════════
 	// ImGuiの初期化
@@ -451,11 +325,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			debugCamera.Update();
 		}
 
+		// カメラの行列を更新する
+		camera.Update();
+
 		// カメラとスフィアの設定
 #ifdef USE_IMGUI
 		ImGui::Begin("Settings");
-		ImGui::DragFloat3("camera translate", &cameraTransform.translate.x, 0.01f);
-		ImGui::DragFloat3("camera rotate", &cameraTransform.rotate.x, 0.01f);
+		Vector3 cameraTranslate = camera.GetTranslate();
+		if (ImGui::DragFloat3("camera translate", &cameraTranslate.x, 0.01f)) {
+			camera.SetTranslate(cameraTranslate);
+		}
+		Vector3 cameraRotate = camera.GetRotate();
+		if (ImGui::DragFloat3("camera rotate", &cameraRotate.x, 0.01f)) {
+			camera.SetRotate(cameraRotate);
+		}
 		ImGui::DragFloat3("sphere rotate", &transformModel.rotate.x, 0.01f);
 		// マテリアルの数ぶんループ（今は1個）
 		for (uint32_t i = 0; i < model.GetMaterialCount(); ++i) {
@@ -472,9 +355,27 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// SphereとSpriteのUVTransform
 		// UV座標はxy平面なので、移動・拡縮はxyの2成分、回転はz軸まわりのみ
 		// ────────────────────────────────────────
+
+		// スプライトの位置・回転・アンカーポイント
+		// ────────────────────────────────────────
+		Vector2 spritePosition = sprite.GetPosition();
+		if (ImGui::DragFloat2("sprite position", &spritePosition.x, 1.0f)) {
+			sprite.SetPosition(spritePosition);
+		}
+
+		float spriteRotation = sprite.GetRotation();
+		if (ImGui::SliderAngle("sprite rotate", &spriteRotation)) {
+			sprite.SetRotation(spriteRotation);
+		}
+
+		Vector2 spriteAnchor = sprite.GetAnchorPoint();
+		if (ImGui::DragFloat2("sprite anchor", &spriteAnchor.x, 0.01f, 0.0f, 1.0f)) {
+			sprite.SetAnchorPoint(spriteAnchor);
+		}
 		ImGui::DragFloat2("SpriteUVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
 		ImGui::DragFloat2("SpriteUVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
 		ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite.rotate.z);
+
 		ImGui::DragFloat2("ModelUVTranslate", &uvTransformModel.translate.x, 0.01f, -10.0f, 10.0f);
 		ImGui::DragFloat2("ModelUVScale", &uvTransformModel.scale.x, 0.01f, -10.0f, 10.0f);
 		ImGui::SliderAngle("ModelUVRotate", &uvTransformModel.rotate.z);
@@ -508,39 +409,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// ────────────────────────────────────────
 		Matrix4x4 worldMatrixModel = MakeAffineMatrix(transformModel.scale, transformModel.rotate, transformModel.translate); // 拡縮、回転、移動
 		// ────────────────────────────────────────
-		// ビュー行列・射影行列（通常カメラ / デバッグカメラの切り替え）
+		// 使用するカメラを選ぶ（F1 で切り替え）
 		// ────────────────────────────────────────
-		Matrix4x4 viewMatrixModel;
-		Matrix4x4 projectionMatrix;
-
-		if (useDebugCamera) {
-			// デバッグカメラが自前で計算済みのものを受け取るだけ
-			viewMatrixModel = debugCamera.GetViewMatrix();
-			projectionMatrix = debugCamera.GetProjectionMatrix();
-		} else {
-			Matrix4x4 cameraMatrixModel = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate); // ワールド基準で、カメラはどこにいるか
-			viewMatrixModel = Inverse(cameraMatrixModel);  // カメラ基準で、ワールドはどこにあるか(ワールドをカメラに合わせる）
-			/*
-			  やりたいこと    ： カメラ基準の座標が欲しい
-			  計算方法       ： 世界全体を、カメラが原点に来るようにずらす
-			  結果          ： ずらした後の座標 ＝ カメラ基準の座標
-			*/
-
-			projectionMatrix = MakePerspectiveMatrix(0.45f, float(WinApp::kClientWidth) / float(WinApp::kClientHeight), 0.1f, 100.0f); // 透視投影 で遠いほど小さく見える処理を加え、２D上でも奥行を出す（ 視錐台切り取りカメラ ）
-		}
-		/*
-		* MakePerspectiveMatrix(0.45f, 1280.0f / 720.0f, 0.1f, 100.0f);
-								   ↑         ↑            ↑      ↑
-								  fovY    aspectRatio   nearClip farClip
-
-
-			引数	            値	                    意味
-			fovY	        0.45（ラジアン、約26度）	縦方向の画角。カメラのレンズの広さ
-			aspectRatio	    1.778（16:9）	        画面の横÷縦
-			nearClip	    0.1	                    これより近いものは映さない
-			farClip	        100.0	                これより遠いものは映さない
-		*/
-
+		const Matrix4x4& viewProjectionMatrix = useDebugCamera
+			? debugCamera.GetViewProjectionMatrix()
+			: camera.GetViewProjectionMatrix();
 
 
 		// ────────────────────────────────────────
@@ -553,22 +426,15 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 			model.GetMaterialData(i)->uvTransform = uvTransformMatrixModel;
 		}
 
-		// ────────────────────────────────────────
-		// ＜スプライト＞　レンダ（クリップ空間まで変換）（２D）
-		// ────────────────────────────────────────
-		// Sprite用のWorldViewProjectionMatrixを作る
-		Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
-		Matrix4x4 viewMatrixSprite = MakeIdentity4x4();   // 2D用カメラ（原点・動かさない）
-		Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, float(WinApp::kClientWidth), float(WinApp::kClientHeight), 0.0f, 100.0f); // 平行投影 で完全にカメラから平行に映す処理（ 直方体カメラ＜0〜1280 × 0〜720 × 0〜100＞）
-		transformationMatrixDataSprite->WVP = MakeWVPMatrix(worldMatrixSprite, viewMatrixSprite, projectionMatrixSprite);
-		transformationMatrixDataSprite->World = worldMatrixSprite;
 
 		// ────────────────────────────────────────
 		// ＜スプライト＞　UVTransform行列を作る
 		// 座標変換の基本どおり Scale → Rotate → Translate (SRT) の順に掛ける
 		// ────────────────────────────────────────
-		Matrix4x4 uvTransformMatrixSprite = MakeAffineMatrix(uvTransformSprite.scale, uvTransformSprite.rotate, uvTransformSprite.translate);
-		spriteMaterialData->uvTransform = uvTransformMatrixSprite;
+		Matrix4x4 uvTransformMatrixSprite = MakeAffineMatrix(
+			uvTransformSprite.scale, uvTransformSprite.rotate, uvTransformSprite.translate);
+		sprite.GetMaterialData()->uvTransform = uvTransformMatrixSprite;
+
 #ifdef USE_IMGUI
 		// 開発用UIの処理
 		ImGui::ShowDemoWindow();
@@ -591,13 +457,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// 線の予約（毎フレーム、先頭でリセット）
 		primitiveDrawer.Reset();
 		DrawGrid(primitiveDrawer);
+		primitiveDrawer.Draw(viewProjectionMatrix);
 
-		primitiveDrawer.Draw(viewMatrixModel * projectionMatrix);
 
 
 		// パイプラインを設定する（RootSignature + PSO + トポロジ）
-		object3dPipeline.SetPipeline(); // Object3dPipeline::BlendMode::Normal
-
+		object3dPipeline.SetPipeline(); // 書き方（Object3dPipeline::BlendMode::Normalみたいな感じ）
 
 		// 平行光源はシーン共通なので、描画の最初に1回設定すればよい
 		commandList->SetGraphicsRootConstantBufferView(Object3dPipeline::kRootParameterLight, directionalLightResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[3]を介して、 directionalLightResourceアドレスを渡す
@@ -609,34 +474,16 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		//   DrawCall は Model::Draw の中
 		//   平行光源(root 3) はシーン共通なので上で1回設定済み
 		// ────────────────────────────────────────
-		model.Draw(worldMatrixModel, viewMatrixModel* projectionMatrix);
-
-
+		model.Draw(worldMatrixModel, viewProjectionMatrix);
 
 		// ────────────────────────────────────────
 		// スプライトを描画する
+		//   パイプラインはモデルと共通なので設定済み
 		// ────────────────────────────────────────
+		sprite.Draw();
 
-		commandList->SetGraphicsRootConstantBufferView(Object3dPipeline::kRootParameterMaterial, spriteMaterialResource->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[0]を介して、spriteMaterialResourceアドレスを渡す
-		commandList->SetGraphicsRootDescriptorTable(
-			Object3dPipeline::kRootParameterTexture, textureManager.GetSrvGpuHandle(uvCheckerTextureIndex));
-		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);   // スプライト用VBVを設定
-		commandList->IASetIndexBuffer(&indexBufferViewSprite);            // スプライト用IBVを設定
-		commandList->SetGraphicsRootConstantBufferView(Object3dPipeline::kRootParameterTransform, transformationMatrixResourceSprite->GetGPUVirtualAddress()); // シェーダーにルートパラメータ[1]を介して、transformationMatrixResourceSpriteアドレスを渡す
 
-		// 描画！(DrawCall/ドローコール)
 
-		//commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);                   // DrawInstanced → DrawIndexedInstanced
-
-#pragma region  MyRegion
-		/*
-		＜引数＞	                  ＜値＞	    ＜意味＞
-		VertexCountPerInstance	    3	    1回の描画で使う頂点の数
-		InstanceCount	            1	    同じものを何個描くか
-		StartVertexLocation	        0	    頂点バッファの何番目から使うか
-		StartInstanceLocation	    0	    インスタンス番号をいくつから数えるか
-		*/
-#pragma endregion
 		// ===== ImGuiの描画（これも一応BackBufferリソースに書き込む要素なのでbarrierのPRESENTへの遷移よりは上に書く） =====　
 #ifdef USE_IMGUI
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList.Get()); // ImGui::Renderのデータと使っているコマンドリストを引数に
@@ -660,11 +507,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ImGui::DestroyContext();
 #endif
 
-	// ─── COMオブジェクトの解放 ───
-	// すべてComPtrで管理しているので、WinMainを抜けるときにデストラクタが
-	// 「構築したのと逆の順番」で自動的にReleaseを呼んでくれる。
-	// ここに Release() を書くと二重解放になるので絶対に書かないこと。
-
 
 	// ─── ComPtrで扱えないものだけ、ここで後始末する ───
 	// ════════════════════════════════════════════════════════════════
@@ -674,9 +516,5 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	winApp.Finalize();
 
 
-	// ※ リソースリークチェックは D3DResourceLeakChecker のデストラクタで行う。
-	//    ここで行うと、まだComPtrが解放されていないので「漏れている」と誤検出される。
-
-	CoUninitialize();
 	return 0;
 }
