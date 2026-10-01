@@ -54,14 +54,6 @@ void Model::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
         std::memcpy(indexData, modelData.indices.data(), indexSize);
     }
 
-    // ════════════════════════════════════════
-    // 座標変換行列の定数バッファ（VS b0）
-    // ════════════════════════════════════════
-    transformationMatrixResource_ = dxCommon_->CreateBufferResource(sizeof(TransformationMatrix));
-    transformationMatrixResource_->Map(0, nullptr,
-        reinterpret_cast<void**>(&transformationMatrixData_));
-    transformationMatrixData_->WVP = MakeIdentity4x4();
-    transformationMatrixData_->World = MakeIdentity4x4();
 
     // ════════════════════════════════════════
     // マテリアルごとに「定数バッファ（PS b0）」と「テクスチャ」を用意する
@@ -95,39 +87,40 @@ void Model::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
     meshes_ = modelData.meshes;
 }
 
+
 // ════════════════════════════════════════════════════════════════════
 // 描画
-//   RootSignature / PSO / トポロジは呼び出し側が設定済みであること
+//   行列CBは呼び出し側（ModelInstance）が用意する
+//   RootSignature / PSO / トポロジも呼び出し側が設定済みであること
 //   平行光源（b1）もシーン共通なので呼び出し側が設定済みであること
 // ════════════════════════════════════════════════════════════════════
-void Model::Draw(const Matrix4x4& worldMatrix, const Matrix4x4& viewProjectionMatrix) {
+void Model::Draw(D3D12_GPU_VIRTUAL_ADDRESS transformationMatrixAddress) {
 
     ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList().Get();
 
     // ────────────────────────────────────────
     // ① モデル全体で1回だけ設定するもの
     // ────────────────────────────────────────
-    transformationMatrixData_->WVP = worldMatrix * viewProjectionMatrix;
-    transformationMatrixData_->World = worldMatrix;
-
     commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
     if (indexResource_) {
         commandList->IASetIndexBuffer(&indexBufferView_);
     }
     commandList->SetGraphicsRootConstantBufferView(
-        Object3dPipeline::kRootParameterTransform, transformationMatrixResource_->GetGPUVirtualAddress());
+        Object3dPipeline::kRootParameterTransform, transformationMatrixAddress);
 
     // ────────────────────────────────────────
     // ② Mesh ごとに、マテリアルを切り替えて描く
     // ────────────────────────────────────────
     for (const Mesh& mesh : meshes_) {
 
-        const MaterialResource& material = materials_[mesh.materialIndex];
+		const MaterialResource& material = materials_[mesh.materialIndex]; //　各メッシュに対応したマテリアルの情報を取得する
 
         commandList->SetGraphicsRootConstantBufferView(
-            Object3dPipeline::kRootParameterMaterial, material.resource->GetGPUVirtualAddress());// シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
+            Object3dPipeline::kRootParameterMaterial,
+            material.resource->GetGPUVirtualAddress());  // シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
         commandList->SetGraphicsRootDescriptorTable(
-            Object3dPipeline::kRootParameterTexture, textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
+            Object3dPipeline::kRootParameterTexture,
+            textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
 
         // 描画！(DrawCall/ドローコール)
         // インデックスを持っているモデル(球)と、持っていないモデル(obj)で呼ぶ関数が変わる
@@ -139,8 +132,6 @@ void Model::Draw(const Matrix4x4& worldMatrix, const Matrix4x4& viewProjectionMa
         第5引数：SV_InstanceID の開始番号。インスタンシングしないので0
 
         */
-
-
         if (mesh.indexCount > 0) {
             commandList->DrawIndexedInstanced(mesh.indexCount, 1, mesh.startIndex, 0, 0);
         } else {

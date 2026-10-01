@@ -20,7 +20,12 @@ public:
     // ルートパラメータ番号は Object3dPipeline が決める
     void Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
         const ModelData& modelData);
-    void Draw(const Matrix4x4& worldMatrix, const Matrix4x4& viewProjectionMatrix);
+
+    /// <summary> 渡された行列CBを使って描画する</summary>
+    /// <param name="transformationMatrixAddress">
+    ///   ModelInstance が持つ TransformationMatrix の GPU アドレス
+    /// </param>
+    void Draw(D3D12_GPU_VIRTUAL_ADDRESS transformationMatrixAddress);
 
     uint32_t  GetMaterialCount() const { return static_cast<uint32_t>(materials_.size()); }
     uint32_t  GetMeshCount() const { return static_cast<uint32_t>(meshes_.size()); }
@@ -44,10 +49,6 @@ private:
     // インデックスバッファ（使わないモデルでは nullptr のまま）
     Microsoft::WRL::ComPtr<ID3D12Resource> indexResource_;
     D3D12_INDEX_BUFFER_VIEW indexBufferView_{};
-
-    // ワールド行列の定数バッファ（G-3 まではモデル1体ぶんしか持てない）
-    Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResource_;
-    TransformationMatrix* transformationMatrixData_ = nullptr;
 
     std::vector<MaterialResource> materials_;
     std::vector<Mesh>             meshes_;

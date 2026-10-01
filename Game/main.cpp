@@ -24,6 +24,7 @@
 #include "Object3dPipeline.h"
 #include "Sprite.h"
 #include "Camera.h"
+#include "ModelInstance.h"
 // imgui用のincludeと外部関数
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -38,7 +39,6 @@
 
 // ════════════════════════════════════════════════════════════════════
 // TODO: ここに残っている Engine 側のコードを順に引っ越す
-//   [ ] R-E  ModelInstance（複数体描画）
 //   [ ] R-F  ModelManager（モデルの共有）
 //   [ ] R-G  ゲームの中身                  → Game/GameScene
 //   ────────── そのうち ──────────
@@ -178,8 +178,27 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// モデルを用意する
 	// 使いたい方のコメントを外す（ModelDataを返すので以降のコードは共通）
 	// ════════════════════════════════════════════════════
-	//ModelData modelData = ObjLoader::Load("resources", "multiMaterial.obj");
-	ModelData modelData = PrimitiveModel::CreateSphere(16,"resources/uvChecker.png");
+	ModelData modelData = ObjLoader::Load("resources", "multiMaterial.obj");
+	//ModelData modelData = PrimitiveModel::CreateSphere(16,"resources/uvChecker.png");
+
+	Model model;
+	model.Initialize(&dxCommon, &textureManager, modelData);
+
+	// ════════════════════════════════════════════════════
+	// 同じ Model を指すインスタンスを3体作る
+	//   頂点データは model が1つ持っているだけ。
+	//   増えるのは1体あたり 128 バイトの行列CBのみ
+	// ════════════════════════════════════════════════════
+	const uint32_t kInstanceCount = 40;
+	ModelInstance instances[kInstanceCount];
+
+	for (uint32_t i = 0; i < kInstanceCount; ++i) {
+		instances[i].Initialize(&dxCommon, &model);
+		// -2.5, 0, +2.5 の位置に横一列で並べる
+		instances[i].GetTransform().translate = { (float(i) - 1.0f) * 2.5f, 0.0f, 0.0f };
+	}
+
+	/*
 
 	// ════════════════════════════════════════════════════
 	// Model クラスに渡す
@@ -192,6 +211,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 	// Transform変数を作る
 	Transform transformModel{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f} };
+	*/
 
 	// ════════════════════════════════════════
 	// カメラ
@@ -339,7 +359,29 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		if (ImGui::DragFloat3("camera rotate", &cameraRotate.x, 0.01f)) {
 			camera.SetRotate(cameraRotate);
 		}
-		ImGui::DragFloat3("sphere rotate", &transformModel.rotate.x, 0.01f);
+
+		// ────────────────────────────────────────
+		// インスタンスごとの操作
+		// ────────────────────────────────────────
+		for (uint32_t i = 0; i < kInstanceCount; ++i) {
+			ImGui::PushID(int(i));                      // 同じラベルを区別する
+			ImGui::Text("Instance %u", i);
+
+			// GetTransform() が参照を返すので、本物のメンバを直接編集できる
+			ImGui::DragFloat3("translate", &instances[i].GetTransform().translate.x, 0.01f);
+			ImGui::DragFloat3("rotate", &instances[i].GetTransform().rotate.x, 0.01f);
+			ImGui::DragFloat3("scale", &instances[i].GetTransform().scale.x, 0.01f);
+
+			bool isVisible = instances[i].IsVisible();
+			if (ImGui::Checkbox("visible", &isVisible)) {
+				instances[i].SetVisible(isVisible);
+			}
+
+			ImGui::Separator();
+			ImGui::PopID();
+		}
+
+		
 		// マテリアルの数ぶんループ（今は1個）
 		for (uint32_t i = 0; i < model.GetMaterialCount(); ++i) {
 			ImGui::PushID(int(i));                                     // 同じラベルを区別する
@@ -405,10 +447,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 
 		// ────────────────────────────────────────
-		// ＜3Dモデル＞     レンダ（クリップ空間まで変換）（３D）
-		// ────────────────────────────────────────
-		Matrix4x4 worldMatrixModel = MakeAffineMatrix(transformModel.scale, transformModel.rotate, transformModel.translate); // 拡縮、回転、移動
-		// ────────────────────────────────────────
 		// 使用するカメラを選ぶ（F1 で切り替え）
 		// ────────────────────────────────────────
 		const Matrix4x4& viewProjectionMatrix = useDebugCamera
@@ -470,15 +508,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 
 		// ────────────────────────────────────────
 		// モデルを描画する
-		//   マテリアル(root 0) / 座標変換(root 1) / テクスチャ(root 2) の設定と
+		//   インスタンスごとに自分の行列CBを使うので、別々の位置に出る
+		// 
+		//  マテリアル(root 0) / 座標変換(root 1) / テクスチャ(root 2) の設定と
 		//   DrawCall は Model::Draw の中
 		//   平行光源(root 3) はシーン共通なので上で1回設定済み
 		// ────────────────────────────────────────
-		model.Draw(worldMatrixModel, viewProjectionMatrix);
+		for (uint32_t i = 0; i < kInstanceCount; ++i) {
+			instances[i].Draw(viewProjectionMatrix);
+		}
 
 		// ────────────────────────────────────────
 		// スプライトを描画する
 		//   パイプラインはモデルと共通なので設定済み
+		// 
 		// ────────────────────────────────────────
 		sprite.Draw();
 
