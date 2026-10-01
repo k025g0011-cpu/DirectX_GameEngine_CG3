@@ -151,11 +151,13 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\Camera.cpp" />
     <ClCompile Include="Engine\3d\Model.cpp" />
     <ClCompile Include="Engine\3d\ModelInstance.cpp" />
+    <ClCompile Include="Engine\3d\ModelManager.cpp" />
     <ClCompile Include="Engine\3d\Object3dPipeline.cpp" />
     <ClCompile Include="Engine\3d\PrimitiveDrawer.cpp" />
     <ClCompile Include="Engine\base\CrashHandler.cpp" />
     <ClCompile Include="Engine\base\DirectXCommon.cpp" />
     <ClCompile Include="Engine\base\Logger.cpp" />
+    <ClCompile Include="Engine\base\RenderTexture.cpp" />
     <ClCompile Include="Engine\base\TextureManager.cpp" />
     <ClCompile Include="Engine\base\WinApp.cpp" />
     <ClCompile Include="Engine\editor\DebugCamera.cpp" />
@@ -191,6 +193,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="Game\GameScene.cpp" />
+    <ClCompile Include="Game\GameTime.cpp" />
     <ClCompile Include="Game\main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -233,12 +237,14 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\Model.h" />
     <ClInclude Include="Engine\3d\ModelData.h" />
     <ClInclude Include="Engine\3d\ModelInstance.h" />
+    <ClInclude Include="Engine\3d\ModelManager.h" />
     <ClInclude Include="Engine\3d\Object3dPipeline.h" />
     <ClInclude Include="Engine\3d\Object3dStructs.h" />
     <ClInclude Include="Engine\3d\PrimitiveDrawer.h" />
     <ClInclude Include="Engine\base\CrashHandler.h" />
     <ClInclude Include="Engine\base\DirectXCommon.h" />
     <ClInclude Include="Engine\base\Logger.h" />
+    <ClInclude Include="Engine\base\RenderTexture.h" />
     <ClInclude Include="Engine\base\TextureManager.h" />
     <ClInclude Include="Engine\base\WinApp.h" />
     <ClInclude Include="Engine\editor\DebugCamera.h" />
@@ -250,6 +256,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\math\Vector2.h" />
     <ClInclude Include="Engine\math\Vector3.h" />
     <ClInclude Include="Engine\math\Vector4.h" />
+    <ClInclude Include="Engine\scene\EngineContext.h" />
     <ClInclude Include="externals\imgui\imconfig.h" />
     <ClInclude Include="externals\imgui\imgui.h" />
     <ClInclude Include="externals\imgui\imgui_impl_dx12.h" />
@@ -258,6 +265,8 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
+    <ClInclude Include="Game\GameScene.h" />
+    <ClInclude Include="Game\GameTime.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />

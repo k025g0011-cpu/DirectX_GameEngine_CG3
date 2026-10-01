@@ -41,6 +41,10 @@ public:
 	const Vector3& GetTarget() const { return target_; }
 	float GetDistance() const { return distance_; }
 
+	/// <summary>入力を受け付けるかどうか（false でも行列の更新は行う）</summary>
+	void SetInputEnabled(bool enabled) { isInputEnabled_ = enabled; }
+	bool IsInputEnabled() const { return isInputEnabled_; }
+
 private:
 	// 借り物のポインタ。deleteしない
 	Input* input_ = nullptr;
@@ -65,4 +69,7 @@ private:
 	float moveSpeed_ = 0.005f;   // マウス1ピクセルあたりのワールド単位
 	float wheelSpeed_ = 0.5f;     // ホイール1ノッチあたりのワールド単位
 	float keySpeed_ = 0.05f;    // キー1フレームあたりのワールド単位
+
+	// ───── 入力受付フラグ ─────
+	bool isInputEnabled_ = true;
 };

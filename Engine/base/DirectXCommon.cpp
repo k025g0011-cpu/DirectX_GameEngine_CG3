@@ -259,9 +259,10 @@ void DirectXCommon::InitializeRenderTargetView() {
 	// ────────────────────────────────────────────────────────────────
 	// ① RTV 用のディスクリプタヒープ（棚）を作る
 	//     RTV は Shader 内で触らないので ShaderVisible は false
+	//     オフスクリーン描画先の分も入るよう kMaxRtvCount で作る
 	// ────────────────────────────────────────────────────────────────
 	rtvDescriptorHeap_ = CreateDescriptorHeap(
-		D3D12_DESCRIPTOR_HEAP_TYPE_RTV, kBackBufferCount, false);
+		D3D12_DESCRIPTOR_HEAP_TYPE_RTV, kMaxRtvCount, false);
 
 
 	// ────────────────────────────────────────────────────────────────
@@ -270,6 +271,8 @@ void DirectXCommon::InitializeRenderTargetView() {
 	for (uint32_t i = 0; i < kBackBufferCount; ++i) {
 		hr = swapChain_->GetBuffer(i, IID_PPV_ARGS(&swapChainResources_[i]));
 		assert(SUCCEEDED(hr));
+
+		swapChainResources_[i]->SetName(L"SwapChainBuffer");
 	}
 
 	// ────────────────────────────────────────────────────────────────
@@ -280,13 +283,16 @@ void DirectXCommon::InitializeRenderTargetView() {
 	rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;    // 2Dテクスチャとして扱う
 
 	// ────────────────────────────────────────────────────────────────
-	// ④ ヒープの i 番目に RTV を作る
+	// ④ 配布係から番号をもらって RTV を作る
+	//     0, 1 が返る。以降の番号はオフスクリーン描画先が使う
 	// ────────────────────────────────────────────────────────────────
 	for (uint32_t i = 0; i < kBackBufferCount; ++i) {
-		rtvHandles_[i] = GetCpuDescriptorHandle(rtvDescriptorHeap_, descriptorSizeRTV_, i);
+		uint32_t rtvIndex = AllocateRtv();
+		rtvHandles_[i] = GetRtvCpuDescriptorHandle(rtvIndex);
 		device_->CreateRenderTargetView(
 			swapChainResources_[i].Get(), &rtvDesc, rtvHandles_[i]);
 	}
+
 }
 
 
@@ -331,22 +337,25 @@ void DirectXCommon::InitializeDepthStencilView() {
 
 	// ────────────────────────────────────────────────────────────────
 	// ② DSV 用のディスクリプタヒープを作る
-	//     DSV はシェーダー内で触らないので ShaderVisible は false
+	//     オフスクリーン用の深度バッファの分も入るよう kMaxDsvCount で作る
 	// ────────────────────────────────────────────────────────────────
 	dsvDescriptorHeap_ = CreateDescriptorHeap(
-		D3D12_DESCRIPTOR_HEAP_TYPE_DSV, 1, false);
+		D3D12_DESCRIPTOR_HEAP_TYPE_DSV, kMaxDsvCount, false);
+
 
 	// ────────────────────────────────────────────────────────────────
-	// ③ DSV を作る（ヒープの先頭に配置）
+	// ③ 配布係から番号をもらって DSV を作る
 	// ────────────────────────────────────────────────────────────────
 	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc{};
 	dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 
+	depthStencilDsvIndex_ = AllocateDsv();   //  0 が返る
+
 	device_->CreateDepthStencilView(
 		depthStencilResource_.Get(),
 		&dsvDesc,
-		GetCpuDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV_, 0));
+		GetDsvCpuDescriptorHandle(depthStencilDsvIndex_));
 }
 
 
@@ -400,6 +409,29 @@ void DirectXCommon::InitializeViewport() {
 	scissorRect_.bottom = WinApp::kClientHeight;
 }
 
+// ════════════════════════════════════════════════════════════════════
+// 描画先をスワップチェーンに設定する
+//   PreDraw から呼ばれるほか、オフスクリーン描画のあとに戻すためにも呼ぶ
+// ════════════════════════════════════════════════════════════════════
+void DirectXCommon::SetSwapChainRenderTarget() {
+
+	// 深度バッファの DSV ハンドル
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+		GetCpuDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV_, 0);
+
+	// 描画先（RTV と DSV）を設定する
+	commandList_->OMSetRenderTargets(
+		1,                              // レンダーターゲットの数
+		&rtvHandles_[backBufferIndex_], // レンダーターゲットのハンドル
+		false,                          // 連続していないので false
+		&dsvHandle);                    // 深度バッファのハンドル
+
+	// ビューポートとシザー矩形を設定する
+	commandList_->RSSetViewports(1, &viewport_);
+	commandList_->RSSetScissorRects(1, &scissorRect_);
+}
+
+
 
 // ════════════════════════════════════════════════════════════════════
 // 描画前処理
@@ -415,57 +447,38 @@ void DirectXCommon::PreDraw() {
 	// ────────────────────────────────────────────────────────────────
 	// ② バリア：表示状態 → 描画対象状態
 	// ────────────────────────────────────────────────────────────────
-	// 今回のバリアは遷移（状態を変える）
 	barrier_.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-	// 特に指定なし
 	barrier_.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-	// バリアを張る対象のリソース（現在のバックバッファ）
 	barrier_.Transition.pResource = swapChainResources_[backBufferIndex_].Get();
-	// 遷移前（現在）の状態
 	barrier_.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-	// 遷移後の状態
 	barrier_.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-	// バリアを張る
 	commandList_->ResourceBarrier(1, &barrier_);
 
 	// ────────────────────────────────────────────────────────────────
-	// ③ 描画先（RTV と DSV）を設定する
+	// ③ 描画先・ビューポート・シザー矩形を設定する
 	// ────────────────────────────────────────────────────────────────
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
-		GetCpuDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV_, 0);
-
-	commandList_->OMSetRenderTargets(
-		1,                              // レンダーターゲットの数
-		&rtvHandles_[backBufferIndex_], // レンダーターゲットのハンドル
-		false,                          // 連続していないので false
-		&dsvHandle);                    // 深度バッファのハンドル
+	SetSwapChainRenderTarget();
 
 	// ────────────────────────────────────────────────────────────────
 	// ④ 画面をクリアする
 	// ────────────────────────────────────────────────────────────────
-	// 青っぽい色（RGBA）
-	float clearColor[] = { 0.0f,0.0f,0.0f,0.6f };
+	float clearColor[] = { 0.0f, 0.0f, 0.0f, 0.6f };
 	commandList_->ClearRenderTargetView(
 		rtvHandles_[backBufferIndex_], clearColor, 0, nullptr);
 
-	// 深度を 1.0（一番遠い）でクリア
-	//   ※ CreateCommittedResource で指定した最適化クリア値と一致させること
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
+		GetDsvCpuDescriptorHandle(depthStencilDsvIndex_);
 	commandList_->ClearDepthStencilView(
 		dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 	// ────────────────────────────────────────────────────────────────
 	// ⑤ 使用するディスクリプタヒープを設定する
-	//     SRV ヒープは1フレームに1回、描画コマンドより前に設定する
 	// ────────────────────────────────────────────────────────────────
 	ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap_.Get() };
 	commandList_->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-
-	// ────────────────────────────────────────────────────────────────
-	// ⑥ ビューポートとシザー矩形を設定する
-	// ────────────────────────────────────────────────────────────────
-	commandList_->RSSetViewports(1, &viewport_);
-	commandList_->RSSetScissorRects(1, &scissorRect_);
 }
+
+
 
 // ════════════════════════════════════════════════════════════════════
 // 描画後処理
@@ -647,7 +660,7 @@ D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetGpuDescriptorHandle(
 }
 
 // ════════════════════════════════════════════════════════════════════
-// SRV ヒープ専用の省略版
+// SRV / RTV / DSV ヒープ専用の省略版
 //   ヒープとサイズは自分が持っているので、呼ぶ側は index だけでよい
 // ════════════════════════════════════════════════════════════════════
 D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetSrvCpuDescriptorHandle(uint32_t index) const {
@@ -656,6 +669,14 @@ D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetSrvCpuDescriptorHandle(uint32_t in
 
 D3D12_GPU_DESCRIPTOR_HANDLE DirectXCommon::GetSrvGpuDescriptorHandle(uint32_t index) const {
 	return GetGpuDescriptorHandle(srvDescriptorHeap_, descriptorSizeSRV_, index);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetRtvCpuDescriptorHandle(uint32_t index) const {
+	return GetCpuDescriptorHandle(rtvDescriptorHeap_, descriptorSizeRTV_, index);
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE DirectXCommon::GetDsvCpuDescriptorHandle(uint32_t index) const {
+	return GetCpuDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV_, index);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -669,6 +690,28 @@ uint32_t DirectXCommon::AllocateSrv() {
 	// 今の番号を返して、次に備えて1つ進める
 	uint32_t index = srvUseIndex_;
 	++srvUseIndex_;
+	return index;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RTV ヒープの空き番号を1つ確保して返す
+// ════════════════════════════════════════════════════════════════════
+uint32_t DirectXCommon::AllocateRtv() {
+	assert(rtvUseIndex_ < kMaxRtvCount);
+
+	uint32_t index = rtvUseIndex_;
+	++rtvUseIndex_;
+	return index;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// DSV ヒープの空き番号を1つ確保して返す
+// ════════════════════════════════════════════════════════════════════
+uint32_t DirectXCommon::AllocateDsv() {
+	assert(dsvUseIndex_ < kMaxDsvCount);
+
+	uint32_t index = dsvUseIndex_;
+	++dsvUseIndex_;
 	return index;
 }
 

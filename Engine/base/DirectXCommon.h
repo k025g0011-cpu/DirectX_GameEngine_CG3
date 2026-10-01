@@ -20,8 +20,16 @@ public:
 	// バックバッファの数
 	static const uint32_t kBackBufferCount = 2;
 
+	// RTV ディスクリプタヒープのサイズ
+	//   バックバッファ + オフスクリーン描画先 + 将来の G-Buffer 用
+	static const uint32_t kMaxRtvCount = 16;
+
+	// DSV ディスクリプタヒープのサイズ
+	//   スワップチェーン用 + オフスクリーン用 + 将来のシャドウマップ用
+	static const uint32_t kMaxDsvCount = 8;
+
 	// SRV ディスクリプタヒープのサイズ
-	static const uint32_t kMaxSrvCount = 128;   
+	static const uint32_t kMaxSrvCount = 128;
 
 	// 初期化
 	void Initialize(WinApp* winApp, std::ostream& logStream);
@@ -34,6 +42,13 @@ public:
 
 	// 描画後処理（バリア・コマンド実行・Present・フェンス待ち）
 	void PostDraw();
+
+	/// <summary>
+	/// 描画先をスワップチェーンのバックバッファに設定する
+	/// （クリアはしない。オフスクリーン描画のあとに戻すためにも使う）
+	/// ※ PreDraw() で backBufferIndex_ が確定した後に呼ぶこと
+	/// </summary>
+	void SetSwapChainRenderTarget();
 
 
 	// 積んだコマンドを実行し、GPU の完了を待つ
@@ -83,10 +98,16 @@ public:
 	D3D12_CPU_DESCRIPTOR_HANDLE GetSrvCpuDescriptorHandle(uint32_t index) const;
 	D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpuDescriptorHandle(uint32_t index) const;
 
+	// RTV / DSV ヒープの index 番目のハンドルを取得する
+	//   どちらもシェーダーから触らないので CPU ハンドルだけでよい
+	D3D12_CPU_DESCRIPTOR_HANDLE GetRtvCpuDescriptorHandle(uint32_t index) const;
+	D3D12_CPU_DESCRIPTOR_HANDLE GetDsvCpuDescriptorHandle(uint32_t index) const;
 
-	// SRV ヒープの空き番号を1つ確保して返す
-	//   テクスチャや ImGui は、この番号を使って SRV を作る
+
+	// 各ヒープの空き番号を1つ確保して返す
 	uint32_t AllocateSrv();
+	uint32_t AllocateRtv();
+	uint32_t AllocateDsv();
 
 private:
 	// ────────────────────────────────────────────────────────────────
@@ -160,8 +181,13 @@ private:
 	uint32_t descriptorSizeDSV_ = 0;
 	uint32_t descriptorSizeSRV_ = 0;
 
-	// 次に配る SRV の番号（配るたびに増える）
+	// 次に配る番号（配るたびに増える）
 	uint32_t srvUseIndex_ = 0;
+	uint32_t rtvUseIndex_ = 0;
+	uint32_t dsvUseIndex_ = 0;
+
+	// スワップチェーン用の深度バッファが DSV ヒープの何番にいるか
+	uint32_t depthStencilDsvIndex_ = 0;
 
 	// ────────────────────────────────────────────────────────────────
 	// シェーダーコンパイラ
