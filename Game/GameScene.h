@@ -2,6 +2,9 @@
 
 #include <cstdint>
 #include <d3d12.h>
+#include <memory>
+#include <string>
+#include <vector>
 #include <wrl.h>
 
 #include "EngineContext.h"
@@ -9,7 +12,7 @@
 #include "Object3dStructs.h"   // DirectionalLight
 #include "Camera.h"
 #include "DebugCamera.h"
-#include "ModelInstance.h"
+#include "GameObject.h"
 #include "Sprite.h"
 
 // 前方宣言
@@ -35,8 +38,15 @@ public:
 	void SetGameViewActive(bool active) { isGameViewActive_ = active; }
 
 private:
+	/// <summary>GameObject を作ってシーンに登録し、そのポインタを返す</summary>
+	/// <param name="name">ヒエラルキーに出る名前</param>
+	GameObject* CreateGameObject(const std::string& name);
+
 	/// <summary>ImGui のウィンドウを構築する</summary>
 	void UpdateImGui();
+
+	/// <summary>ヒエラルキーとインスペクタ（エディタの原型）</summary>
+	void DrawHierarchyAndInspector();
 
 	/// <summary>基準グリッドを PrimitiveDrawer に予約する</summary>
 	void DrawGrid();
@@ -62,12 +72,21 @@ private:
 	Model* sphereModel_ = nullptr;
 	Model* suzanneModel_ = nullptr;
 
-	// 画面に出す実体
-	ModelInstance sphereInstance_;
-	ModelInstance suzanneInstance_;
+	// ────────────────────────────────────────────────────────────────
+	// シーンに置かれたオブジェクト（こちらが所有する）
+	//   unique_ptr なので、vector が再確保されても中身の住所は動かない
+	// ────────────────────────────────────────────────────────────────
+	std::vector<std::unique_ptr<GameObject>> gameObjects_;
+
+	// よく触るものは、毎回探さずポインタで覚えておく
+	GameObject* sphereObject_ = nullptr;
+	GameObject* suzanneObject_ = nullptr;
+
+	// ヒエラルキーで選択中のオブジェクト（-1 = 未選択）
+	int32_t selectedObjectIndex_ = -1;
 
 	// ────────────────────────────────────────────────────────────────
-	// スプライト
+	// スプライト（まだコンポーネント化していない）
 	// ────────────────────────────────────────────────────────────────
 	Sprite sprite_;
 

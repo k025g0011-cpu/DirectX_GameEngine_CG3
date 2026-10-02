@@ -8,6 +8,7 @@
 #include "Input.h"
 #include "GameTime.h"
 #include "Model.h"
+#include "MeshRenderer.h"
 #include "PrimitiveModel.h"
 #include "WinApp.h"
 
@@ -41,13 +42,16 @@ void GameScene::Initialize(const EngineContext& context) {
 	suzanneModel_ = context_.modelManager->Load("resources/suzanne.obj");
 
 	// ════════════════════════════════════════
-	// 画面に出す実体を配置する
+	// オブジェクトを配置する
+	//   「箱を作る → 位置を決める → 機能を足す」の3手順
 	// ════════════════════════════════════════
-	sphereInstance_.Initialize(context_.dxCommon, sphereModel_);
-	sphereInstance_.GetTransform().translate = { -1.5f, 0.0f, 0.0f };
+	sphereObject_ = CreateGameObject("Sphere");
+	sphereObject_->GetTransform().translate = { -1.5f, 0.0f, 0.0f };
+	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
 
-	suzanneInstance_.Initialize(context_.dxCommon, suzanneModel_);
-	suzanneInstance_.GetTransform().translate = { 1.5f, 0.0f, 0.0f };
+	suzanneObject_ = CreateGameObject("Suzanne");
+	suzanneObject_->GetTransform().translate = { 1.5f, 0.0f, 0.0f };
+	suzanneObject_->AddComponent<MeshRenderer>(suzanneModel_);
 
 	// ════════════════════════════════════════
 	// スプライト
@@ -72,6 +76,23 @@ void GameScene::Initialize(const EngineContext& context) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// GameObject を作ってシーンに登録する
+//   「作る → 初期化 → 登録 → ポインタを返す」をまとめた係
+// ════════════════════════════════════════════════════════════════════
+GameObject* GameScene::CreateGameObject(const std::string& name) {
+
+	std::unique_ptr<GameObject> gameObject = std::make_unique<GameObject>();
+	gameObject->Initialize(context_, name);
+
+	// move する前に生ポインタを取っておく
+	GameObject* result = gameObject.get();
+
+	gameObjects_.push_back(std::move(gameObject));
+
+	return result;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // 更新
 //   値を変えるだけ。描画コマンドは積まない
 // ════════════════════════════════════════════════════════════════════
@@ -80,40 +101,43 @@ void GameScene::Update() {
 	const float deltaTime = context_.gameTime->GetDeltaTime();
 
 	// ════════════════════════════════════════
-	// カメラの切り替えと更新
+	// ① カメラの切り替えと更新
 	// ════════════════════════════════════════
 	if (context_.input->TriggerKey(DIK_F1)) {
 		useDebugCamera_ = !useDebugCamera_;
 	}
 
-
-	// ════════════════════════════════════════
-	// デバッグカメラ
-	//   入力を受け付ける条件は「デバッグカメラが ON」かつ
-	//   「ゲームビューの上にマウスがある」の2つだけ。
-	//   ※ ImGui の WantCaptureMouse は使わない。
-	//     ゲーム画面自体が ImGui ウィンドウの中にあるので、
-	//     操作したい場所で必ず true になってしまうため
-	// ════════════════════════════════════════
+	// 入力を受け付ける条件は「デバッグカメラが ON」かつ
+	// 「ゲームビューの上にマウスがある」の2つだけ
 	debugCamera_.SetInputEnabled(useDebugCamera_ && isGameViewActive_);
 	debugCamera_.Update();
 
 	camera_.Update();
 
 	// ════════════════════════════════════════
-	// ImGui（操作を受け付けるので、ゲームの動きより先）
+	// ② ImGui（人の操作を受け付けるので、ゲームの動きより先）
 	// ════════════════════════════════════════
 	UpdateImGui();
 
 	// ════════════════════════════════════════
-	// ゲームの動き
+	// ③ ゲームの動き
 	//   「毎秒どれだけ」× 経過秒 で書く
+	//   ※ いずれ RotatorComponent にして、ここから消える
 	// ════════════════════════════════════════
-	suzanneInstance_.GetTransform().rotate.y += 1.0f * deltaTime;   // 毎秒1ラジアン
+	suzanneObject_->GetTransform().rotate.y += 1.0f * deltaTime;   // 毎秒1ラジアン
 
 	// ════════════════════════════════════════
-	// UVTransform を反映する
-	//   座標変換の基本どおり Scale → Rotate → Translate の順
+	// ④ 全オブジェクトの更新
+	//   GameObject が自分のコンポーネントに配る
+	// ════════════════════════════════════════
+	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
+		gameObject->Update();
+	}
+
+	// ════════════════════════════════════════
+	// ⑤ UVTransform を反映する
+	//   Model（共有データ）側のマテリアルを書き換えるので、
+	//   そのモデルを使う全オブジェクトに効く
 	// ════════════════════════════════════════
 	Matrix4x4 uvTransformMatrixModel = MakeAffineMatrix(
 		uvTransformModel_.scale, uvTransformModel_.rotate, uvTransformModel_.translate);
@@ -156,10 +180,12 @@ void GameScene::Draw() {
 		directionalLightResource_->GetGPUVirtualAddress());
 
 	// ════════════════════════════════════════
-	// ③ モデル
+	// ③ 全オブジェクト
+	//   種類が増えてもこのループは変わらない
 	// ════════════════════════════════════════
-	sphereInstance_.Draw(viewProjectionMatrix);
-	suzanneInstance_.Draw(viewProjectionMatrix);
+	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
+		gameObject->Draw(viewProjectionMatrix);
+	}
 
 	// ════════════════════════════════════════
 	// ④ スプライト（パイプラインはモデルと共通）
@@ -207,6 +233,56 @@ void GameScene::DrawGrid() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// ヒエラルキーとインスペクタ
+//   エディタの原型。オブジェクトやコンポーネントが増えても
+//     このコードは1文字も変わらない
+// ════════════════════════════════════════════════════════════════════
+void GameScene::DrawHierarchyAndInspector() {
+#ifdef USE_IMGUI
+
+	// ───────────────────────────────────────
+	// ヒエラルキー（オブジェクトの一覧）
+	// ───────────────────────────────────────
+	ImGui::Begin("Hierarchy");
+
+	for (size_t i = 0; i < gameObjects_.size(); ++i) {
+		GameObject* gameObject = gameObjects_[i].get();
+
+		// 同じ名前のオブジェクトがあっても別物として扱えるようにする
+		ImGui::PushID(static_cast<int>(i));
+
+		const bool isSelected = (selectedObjectIndex_ == static_cast<int32_t>(i));
+		if (ImGui::Selectable(gameObject->GetName().c_str(), isSelected)) {
+			selectedObjectIndex_ = static_cast<int32_t>(i);
+		}
+
+		ImGui::PopID();
+	}
+
+	ImGui::Text("objects : %zu", gameObjects_.size());
+	ImGui::End();
+
+	// ───────────────────────────────────────
+	// インスペクタ（選択中のオブジェクトの中身）
+	// ───────────────────────────────────────
+	ImGui::Begin("Inspector");
+
+	if (selectedObjectIndex_ >= 0 &&
+		selectedObjectIndex_ < static_cast<int32_t>(gameObjects_.size())) {
+
+		// ここだけ。中身は GameObject と各コンポーネントが描く
+		gameObjects_[selectedObjectIndex_]->DrawInspector();
+
+	} else {
+		ImGui::TextDisabled("(no selection)");
+	}
+
+	ImGui::End();
+
+#endif
+}
+
+// ════════════════════════════════════════════════════════════════════
 // ImGui
 // ════════════════════════════════════════════════════════════════════
 void GameScene::UpdateImGui() {
@@ -235,16 +311,7 @@ void GameScene::UpdateImGui() {
 	}
 	ImGui::Separator();
 
-	// ───── モデル ─────
-	ImGui::DragFloat3("sphere translate", &sphereInstance_.GetTransform().translate.x, 0.01f);
-	ImGui::DragFloat3("sphere rotate", &sphereInstance_.GetTransform().rotate.x, 0.01f);
-
-	for (uint32_t i = 0; i < sphereModel_->GetMaterialCount(); ++i) {
-		ImGui::PushID(int(i));
-		ImGui::ColorEdit4("sphere color", &sphereModel_->GetMaterialData(i)->color.x);
-		ImGui::PopID();
-	}
-
+	// ───── モデルの UV（Model 共有データなのでインスペクタではなくここ） ─────
 	ImGui::DragFloat2("ModelUVTranslate", &uvTransformModel_.translate.x, 0.01f, -10.0f, 10.0f);
 	ImGui::DragFloat2("ModelUVScale", &uvTransformModel_.scale.x, 0.01f, -10.0f, 10.0f);
 	ImGui::SliderAngle("ModelUVRotate", &uvTransformModel_.rotate.z);
@@ -286,7 +353,7 @@ void GameScene::UpdateImGui() {
 	// デバッグカメラの状態表示
 	// ════════════════════════════════════════
 	ImGui::Begin("DebugCamera");
-	ImGui::Text("F1 : %s", useDebugCamera_ ? "ON" : "OFF");
+	ImGui::Text("F1     : %s", useDebugCamera_ ? "ON" : "OFF");
 	ImGui::Text("pos    : %.2f, %.2f, %.2f",
 		debugCamera_.GetTranslation().x, debugCamera_.GetTranslation().y,
 		debugCamera_.GetTranslation().z);
@@ -294,14 +361,14 @@ void GameScene::UpdateImGui() {
 		debugCamera_.GetTarget().x, debugCamera_.GetTarget().y, debugCamera_.GetTarget().z);
 	ImGui::Text("dist   : %.2f", debugCamera_.GetDistance());
 	ImGui::Separator();
-	ImGui::Text("mouse  : %.0f, %.0f  wheel %.1f",
-		context_.input->GetMouseMove().x, context_.input->GetMouseMove().y,
-		context_.input->GetMouseWheel());
-
-	ImGui::Text("F1     : %s", useDebugCamera_ ? "ON" : "OFF");
-	ImGui::Text("view   : %s", isGameViewActive_ ? "ACTIVE" : "inactive");   // ★追加
-	ImGui::Text("input  : %s", debugCamera_.IsInputEnabled() ? "ENABLED" : "disabled");  // ★追加
+	ImGui::Text("view   : %s", isGameViewActive_ ? "ACTIVE" : "inactive");
+	ImGui::Text("input  : %s", debugCamera_.IsInputEnabled() ? "ENABLED" : "disabled");
 	ImGui::End();
+
+	// ════════════════════════════════════════
+	// ヒエラルキーとインスペクタ
+	// ════════════════════════════════════════
+	DrawHierarchyAndInspector();
 
 #endif
 }
