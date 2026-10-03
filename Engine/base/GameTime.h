@@ -26,10 +26,10 @@ public:
 	// ────────────────────────────────────────────────────────────────
 	// 経過時間
 	// ────────────────────────────────────────────────────────────────
-	/// <summary>前フレームからの経過秒。timeScale が掛かる（ゲームの動きに使う）</summary>
-	float GetDeltaTime() const { return deltaTime_ * timeScale_; }
+	/// <summary>ゲーム時間の経過秒。一時停止中は 0 を返す</summary>
+	float GetDeltaTime() const;
 
-	/// <summary>timeScale の影響を受けない経過秒（UI・デバッグカメラに使う）</summary>
+	/// <summary>実時間の経過秒。一時停止中も進む（エディタ用）</summary>
 	float GetUnscaledDeltaTime() const { return deltaTime_; }
 
 	/// <summary>開始からの合計秒（timeScale の影響を受ける）</summary>
@@ -42,11 +42,26 @@ public:
 	float GetFPS() const { return fps_; }
 
 	// ────────────────────────────────────────────────────────────────
+	// 再生制御
+	// ────────────────────────────────────────────────────────────────
+
+	/// <summary>一時停止しているか</summary>
+	bool IsPaused() const { return isPaused_; }
+	void SetPaused(bool paused) { isPaused_ = paused; }
+
+	/// <summary>一時停止中に1フレームだけ進める（コマ送り）</summary>
+	void RequestStep() { stepRequested_ = true; }
+
+	/// <summary>このフレームがコマ送りで動いているか（ImGui 表示用）</summary>
+	bool IsStepping() const { return isStepping_; }
+
+	// ────────────────────────────────────────────────────────────────
 	// 時間の倍率
 	//   1.0 = 等速 / 0.0 = 停止（ポーズ）/ 0.5 = スロー / 2.0 = 倍速
 	// ────────────────────────────────────────────────────────────────
 	float GetTimeScale() const { return timeScale_; }
 	void SetTimeScale(float timeScale) { timeScale_ = timeScale; }
+
 
 private:
 	// 型が長いので別名を付ける
@@ -63,4 +78,8 @@ private:
 	float    fpsAccumulatedTime_ = 0.0f;
 	uint32_t fpsFrameCount_ = 0;
 	float    fps_ = 0.0f;
+
+	bool isPaused_ = false;   // 止まっているか
+	bool stepRequested_ = false;   // 次のフレームで1回だけ進めたい
+	bool isStepping_ = false;   // このフレームがコマ送りか
 };

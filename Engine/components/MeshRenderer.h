@@ -7,6 +7,8 @@
 #include "Component.h"
 #include "MathUtility.h"
 #include "Object3dStructs.h"   // TransformationMatrix
+#include "AssetDatabase.h"   // AssetPayload::kModel  
+#include "ModelManager.h"    // モデルの読み込み       
 
 // 前方宣言（ポインタとしてしか使わない）
 class Model;
@@ -33,9 +35,14 @@ public:
 	Model* GetModel() const { return model_; }
 	void   SetModel(Model* model) { model_ = model; }
 
+	/// <summary>パスからモデルを読み込んで差し替える（ドロップ用）</summary> 
+	void SetModelFromPath(const std::string& modelPath);
 private:
 	// ModelManager が所有している。delete しない
 	Model* model_ = nullptr;
+
+	// 今どのファイルを指しているか（インスペクタ表示とシーン保存用）  
+	std::string modelPath_;
 
 	// 個体ごとの行列（WVP と World の128バイト）
 	//   同じ Model を複数の GameObject が使っても、ここが別なので干渉しない

@@ -34,6 +34,23 @@ void MeshRenderer::Initialize() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// パスからモデルを読み込んで差し替える
+//   すでに読み込み済みなら ModelManager がキャッシュを返す
+// ════════════════════════════════════════════════════════════════════
+void MeshRenderer::SetModelFromPath(const std::string& modelPath) {
+
+	Model* model = GetContext().modelManager->Load(modelPath);
+
+	// 読み込みに失敗したら今のモデルを保つ（画面から消えない方が親切）
+	if (model == nullptr) {
+		return;
+	}
+
+	model_ = model;
+	modelPath_ = modelPath;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // 描画
 //   isEnabled_ の判定は GameObject::Draw が済ませているので不要
 // ════════════════════════════════════════════════════════════════════
@@ -68,6 +85,36 @@ void MeshRenderer::Draw(const Matrix4x4& viewProjectionMatrix) {
 // ════════════════════════════════════════════════════════════════════
 void MeshRenderer::DrawInspector() {
 #ifdef USE_IMGUI
+	// ════════════════════════════════════════
+// モデル欄（ここにアセットパネルから落とせる）  ★D-5
+// ════════════════════════════════════════
+	ImGui::TextDisabled("モデル");
+
+	// 表示文字はパス。コードから直接 Model* を渡された場合はパスが無い
+	const char* modelLabel =
+		!modelPath_.empty() ? modelPath_.c_str()
+		: (model_ != nullptr ? "(コードで設定)" : "(未設定)");
+
+	// ラベルが変わっても ID が変わらないように、ID を固定する
+	ImGui::PushID("model");
+	ImGui::Button(modelLabel, ImVec2(-1.0f, 0.0f));   // 押しても何も起きない。ドロップ先の枠
+	ImGui::PopID();
+
+	// 直前のアイテム（= 上のボタン）をドロップ先にする
+	if (ImGui::BeginDragDropTarget()) {
+
+		// 名前が一致したときだけ中身が返る。違う種類なら nullptr
+		if (const ImGuiPayload* payload =
+			ImGui::AcceptDragDropPayload(AssetPayload::kModel)) {
+
+			// 小包の中身は '\0' 終端の文字列
+			SetModelFromPath(static_cast<const char*>(payload->Data));
+		}
+
+		ImGui::EndDragDropTarget();   // Begin が true のときだけ呼ぶ
+	}
+
+	ImGui::Separator();
 
 	if (model_ == nullptr) {
 		ImGui::TextDisabled("(no model)");

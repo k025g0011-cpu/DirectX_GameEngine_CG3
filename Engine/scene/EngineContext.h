@@ -1,9 +1,11 @@
 #pragma once
 
 // 前方宣言（ポインタしか持たないので #include 不要）
+class WinApp;
 class DirectXCommon;
 class TextureManager;
 class ModelManager;
+class AssetDatabase;
 class Object3dPipeline;
 class PrimitiveDrawer;
 class Input;
@@ -18,9 +20,11 @@ class GameTime;
 //   各シーンの Initialize の宣言を書き換える必要がない
 // ════════════════════════════════════════════════════════════════════
 struct EngineContext {
+	WinApp* winApp = nullptr;
 	DirectXCommon* dxCommon = nullptr;
 	TextureManager* textureManager = nullptr;
 	ModelManager* modelManager = nullptr;
+	AssetDatabase* assetDatabase = nullptr;
 	Object3dPipeline* object3dPipeline = nullptr;
 	PrimitiveDrawer* primitiveDrawer = nullptr;
 	Input* input = nullptr;

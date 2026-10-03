@@ -7,13 +7,13 @@
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
-#include "RenderTexture.h"
 #include "Logger.h"
 #include "CrashHandler.h"
 #include "GameTime.h"
 #include "Input.h"
 #include "TextureManager.h"
 #include "ModelManager.h"
+#include "AssetDatabase.h" 
 #include "Object3dPipeline.h"
 #include "PrimitiveDrawer.h"
 #include "EngineContext.h"
@@ -72,18 +72,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	textureManager.Initialize(&dxCommon);
 
 	// ────────────────────────────────────────────────────────────────
-	// オフスクリーン描画先
-	//   3D はここに描き、ImGui::Image で画面に表示する
+	// アセットの一覧
+	//   GPU を使わないので、どこで作っても構わない
 	// ────────────────────────────────────────────────────────────────
-	RenderTexture renderTexture;
-	{
-		RenderTexture::Desc desc{};
-		desc.width = WinApp::kClientWidth;
-		desc.height = WinApp::kClientHeight;
-		desc.clearColor = { 0.1f, 0.25f, 0.5f, 1.0f };   // 青。スワップチェーンの黒と区別するため
-		desc.useDepth = true;
-		renderTexture.Initialize(&dxCommon, desc);
-	}
+	AssetDatabase assetDatabase;                          
+	assetDatabase.Initialize("resources", logStream);     
 
 	ModelManager modelManager;
 	modelManager.Initialize(&dxCommon, &textureManager);
@@ -109,6 +102,18 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigWindowsMoveFromTitleBarOnly = true;   // ウィンドウはタイトルバーでのみ移動
 	ImGui::StyleColorsDark();
+
+	// ────────────────────────────────────────────────────────────────
+	// 日本語フォントを読み込む
+	//   既定のフォントは ASCII のみ。日本語を出すには別途読む必要がある
+	// ────────────────────────────────────────────────────────────────
+	ImFont* japaneseFont = io.Fonts->AddFontFromFileTTF(
+		"C:/Windows/Fonts/meiryo.ttc",          // メイリオ（Windows 標準）
+		18.0f,                                   // ピクセルサイズ
+		nullptr,                                 // フォント設定（既定でよい）
+		io.Fonts->GetGlyphRangesJapanese());     // ★用意する文字の範囲
+	assert(japaneseFont != nullptr);
+
 	ImGui_ImplWin32_Init(winApp.GetHwnd());
 
 	// ImGui のフォントテクスチャ用に SRV を1つ確保する
@@ -129,9 +134,11 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	// 道具を束ねてシーンに渡す
 	// ════════════════════════════════════════════════════════════════
 	EngineContext context{};
+	context.winApp = &winApp;
 	context.dxCommon = &dxCommon;
 	context.textureManager = &textureManager;
 	context.modelManager = &modelManager;
+	context.assetDatabase = &assetDatabase;
 	context.object3dPipeline = &object3dPipeline;
 	context.primitiveDrawer = &primitiveDrawer;
 	context.input = &input;
@@ -159,49 +166,6 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
 #endif
-
-		// ────────────────────────────────────────────────────
-		// ゲーム画面を ImGui ウィンドウに表示する
-		//   ※ gameScene.Update() より前に置くこと。
-		//     ここで求めたホバー状態を同じフレームの更新で使うため
-		//   ※ STEP 5 で Engine/editor/ のクラスに移す
-		// ────────────────────────────────────────────────────
-		bool isGameViewActive = false;
-#ifdef USE_IMGUI
-		{
-			ImGui::Begin("Game");
-
-			// 画像を置く位置を覚えておく（あとで透明ボタンを重ねるため）
-			ImVec2 cursorPos = ImGui::GetCursorPos();
-
-			ImTextureID gameTextureId = (ImTextureID)renderTexture.GetSrvGpuHandle().ptr;
-			ImVec2 imageSize = ImVec2(
-				static_cast<float>(renderTexture.GetWidth()) * 0.5f,
-				static_cast<float>(renderTexture.GetHeight()) * 0.5f);
-
-			// ① 絵を描く
-			ImGui::Image(gameTextureId, imageSize);
-
-			// ② 描画位置を絵の左上に戻して、③ 同じ大きさの透明ボタンを重ねる
-			ImGui::SetCursorPos(cursorPos);
-			ImGui::InvisibleButton("##gameView", imageSize,
-				ImGuiButtonFlags_MouseButtonLeft |
-				ImGuiButtonFlags_MouseButtonRight |
-				ImGuiButtonFlags_MouseButtonMiddle);
-
-			// 画像の上にいる or 画像の上で押し始めてまだ離していない
-			isGameViewActive = ImGui::IsItemHovered() || ImGui::IsItemActive();
-
-			ImGui::End();
-
-			// ImGui の入力欄に文字を打っている最中は WASD を奪わない
-			isGameViewActive = isGameViewActive && !ImGui::GetIO().WantTextInput;
-		}
-#endif
-
-		// カメラ操作を許可するかをシーンに伝える
-		gameScene.SetGameViewActive(isGameViewActive);
-
 		gameScene.Update();
 
 #ifdef USE_IMGUI
@@ -214,13 +178,12 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// ────────────────────────────────────────────────────
 		dxCommon.PreDraw();
 
-		// ① 3D シーンをオフスクリーンテクスチャに描く
-		renderTexture.PreDraw();
+		// ① シーンをオフスクリーンに描く（描画先の選択も GameScene が行う）
 		gameScene.Draw();
-		renderTexture.PostDraw();
 
 		// ② 描画先をスワップチェーンに戻して ImGui を描く
 		dxCommon.SetSwapChainRenderTarget();
+
 #ifdef USE_IMGUI
 		// ImGui もバックバッファに書き込むので、PostDraw のバリアより前
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), dxCommon.GetCommandList().Get());

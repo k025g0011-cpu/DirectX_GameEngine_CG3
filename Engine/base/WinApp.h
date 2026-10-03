@@ -2,6 +2,10 @@
 
 #include <cstdint>
 #include <windows.h>
+#include <string>
+#include <vector>
+
+#include "MathUtility.h"   // Vector2
 
 // ════════════════════════════════════════════════════════════════════
 // ウィンドウ関連をまとめたクラス
@@ -10,8 +14,8 @@
 class WinApp {
 public:
 	// クライアント領域のサイズ
-	static const int32_t kClientWidth = 1280;
-	static const int32_t kClientHeight = 720;
+	static const int32_t kClientWidth = 1600;
+	static const int32_t kClientHeight = 900;
 
 	// ウィンドウプロシージャ
 	//   Windows から直接呼ばれるので static でなければならない
@@ -25,6 +29,18 @@ public:
 
 	// 後片付け
 	void Finalize();
+
+	// ────────────────────────────────────────────────────────────────
+	// ファイルのドラッグ&ドロップ
+	//   ProcessMessage() を呼ぶたびに前フレームの分は捨てられる
+	// ────────────────────────────────────────────────────────────────
+
+	/// <summary>このフレームにドロップされたファイルの絶対パス一覧</summary>
+	const std::vector<std::string>& GetDroppedFiles() const;
+
+	/// <summary>ドロップされた位置（クライアント座標）</summary>
+	Vector2 GetDropPosition() const;
+
 
 	// 取得
 	HWND      GetHwnd() const { return hwnd_; }

@@ -1,10 +1,29 @@
 #include "WinApp.h"
+#include "Logger.h"      // ConvertString
+#include <shellapi.h>    //（DragAcceptFiles / DragQueryFile）
 
+#pragma comment(lib, "shell32.lib")   
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui_impl_win32.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(
 	HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 #endif
+
+// ════════════════════════════════════════════════════════════════════
+// このファイルの中だけで使うデータ
+//   WindowProc は static（コールバック）なので、
+//   WinApp のメンバ変数に直接触れない。
+//   ウィンドウは1つしかないので、ここに置くのが一番素直
+// ════════════════════════════════════════════════════════════════════
+namespace {
+
+	// このフレームにドロップされたファイルの絶対パス
+	std::vector<std::string> droppedFiles;
+
+	// ドロップされた位置（クライアント座標）
+	Vector2 dropPosition{};
+
+}   // namespace
 
 // ════════════════════════════════════════════════════════════════════
 // ウィンドウプロシージャ
@@ -21,7 +40,37 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
 
 	// メッセージに応じたゲーム固有の処理
 	switch (msg) {
-		// ウィンドウが破棄された
+		// ────────────────────────────────────────────────────────────────
+		// ファイルがドロップされた
+		// ────────────────────────────────────────────────────────────────
+	case WM_DROPFILES: {
+
+		// wparam がドロップされたデータへのハンドル
+		HDROP hDrop = reinterpret_cast<HDROP>(wparam);
+
+		// ① 何個落とされたか
+		//    第2引数に 0xFFFFFFFF を渡すと「個数」が返る仕様
+		UINT fileCount = DragQueryFileW(hDrop, 0xFFFFFFFF, nullptr, 0);
+
+		// ② 1個ずつパスを取り出す
+		for (UINT i = 0; i < fileCount; ++i) {
+			wchar_t path[MAX_PATH]{};
+			DragQueryFileW(hDrop, i, path, MAX_PATH);
+
+			// wchar_t* → std::string（既存の変換を使う）
+			droppedFiles.push_back(ConvertString(path));
+		}
+
+		// ③ どこに落とされたか（クライアント座標）
+		POINT point{};
+		DragQueryPoint(hDrop, &point);
+		dropPosition = { static_cast<float>(point.x), static_cast<float>(point.y) };
+
+		// ④ 後始末。必須（忘れるとメモリリーク）
+		DragFinish(hDrop);
+
+		return 0;
+	}
 	case WM_DESTROY:
 		// OS に対してアプリの終了を伝える
 		PostQuitMessage(0);
@@ -73,6 +122,9 @@ void WinApp::Initialize() {
 		wc_.hInstance,          // インスタンスハンドル
 		nullptr);               // オプション
 
+	// ファイルのドロップを受け付けるようにする
+	DragAcceptFiles(hwnd_, TRUE);
+
 	// ────────────────────────────────────────────────────────────────
 	// ④ ウィンドウを表示する
 	// ────────────────────────────────────────────────────────────────
@@ -85,6 +137,11 @@ void WinApp::Initialize() {
 //   戻り値 true = アプリを終了すべき
 // ════════════════════════════════════════════════════════════════════
 bool WinApp::ProcessMessage() {
+
+	// 前フレームのドロップ情報を捨てる
+	// これにより GetDroppedFiles() は「このフレームに落とされた分」になる
+	droppedFiles.clear();
+
 	MSG msg{};
 
 	// キューが空になるまで処理し続ける
@@ -102,6 +159,18 @@ bool WinApp::ProcessMessage() {
 
 	return false;
 }
+
+// ════════════════════════════════════════════════════════════════════
+// ドロップされたファイル
+// ════════════════════════════════════════════════════════════════════
+const std::vector<std::string>& WinApp::GetDroppedFiles() const {
+	return droppedFiles;
+}
+
+Vector2 WinApp::GetDropPosition() const {
+	return dropPosition;
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // 後片付け

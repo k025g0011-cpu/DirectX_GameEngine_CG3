@@ -11,7 +11,7 @@
 #include "MathUtility.h"
 #include "Object3dStructs.h"   // DirectionalLight
 #include "Camera.h"
-#include "DebugCamera.h"
+#include "Editor.h"
 #include "GameObject.h"
 #include "Sprite.h"
 
@@ -22,6 +22,7 @@ class Model;
 // ゲームのシーン
 //   このゲームで「何を出して、どう動かして、どう描くか」を持つ
 //   エンジンの道具は EngineContext 経由で借りる
+//   エディタの画面構成は Editor に任せる
 // ════════════════════════════════════════════════════════════════════
 class GameScene {
 public:
@@ -31,28 +32,24 @@ public:
 	/// <summary>毎フレームの更新（描画コマンドは積まない）</summary>
 	void Update();
 
-	/// <summary>描画コマンドを積む。PreDraw と PostDraw の間で呼ぶ</summary>
+	/// <summary>オフスクリーンへの描画</summary>
 	void Draw();
-
-	/// <summary>ゲームビューが操作対象か（エディタから毎フレーム伝えられる）</summary>
-	void SetGameViewActive(bool active) { isGameViewActive_ = active; }
 
 private:
 	/// <summary>GameObject を作ってシーンに登録し、そのポインタを返す</summary>
-	/// <param name="name">ヒエラルキーに出る名前</param>
 	GameObject* CreateGameObject(const std::string& name);
 
-	/// <summary>ImGui のウィンドウを構築する</summary>
-	void UpdateImGui();
-
-	/// <summary>ヒエラルキーとインスペクタ（エディタの原型）</summary>
-	void DrawHierarchyAndInspector();
+	/// <summary>シーンの中身を描く。描画先は呼び出し側が設定済み</summary>
+	void DrawScene(const Matrix4x4& viewProjectionMatrix);
 
 	/// <summary>基準グリッドを PrimitiveDrawer に予約する</summary>
 	void DrawGrid();
 
-	/// <summary>いま使うカメラのビュー×射影行列を返す</summary>
-	const Matrix4x4& GetViewProjectionMatrix() const;
+	/// <summary>設定パネルの中身（このゲーム固有）</summary>
+	void DrawSettingsPanel();
+
+	/// <summary>デバッグパネルの中身（このゲーム固有）</summary>
+	void DrawDebugPanel();
 
 	// ────────────────────────────────────────────────────────────────
 	// エンジンから借りている道具
@@ -60,11 +57,14 @@ private:
 	EngineContext context_{};
 
 	// ────────────────────────────────────────────────────────────────
-	// カメラ
+	// エディタ（画面構成・編集カメラ・描画先を持つ）
 	// ────────────────────────────────────────────────────────────────
-	Camera      camera_;
-	DebugCamera debugCamera_;
-	bool        useDebugCamera_ = false;   // F1 で切り替え
+	Editor editor_;
+
+	// ────────────────────────────────────────────────────────────────
+	// ゲームカメラ
+	// ────────────────────────────────────────────────────────────────
+	Camera camera_;
 
 	// ────────────────────────────────────────────────────────────────
 	// モデル（ModelManager が所有。ここは借りているだけ）
@@ -74,16 +74,11 @@ private:
 
 	// ────────────────────────────────────────────────────────────────
 	// シーンに置かれたオブジェクト（こちらが所有する）
-	//   unique_ptr なので、vector が再確保されても中身の住所は動かない
 	// ────────────────────────────────────────────────────────────────
 	std::vector<std::unique_ptr<GameObject>> gameObjects_;
 
-	// よく触るものは、毎回探さずポインタで覚えておく
 	GameObject* sphereObject_ = nullptr;
 	GameObject* suzanneObject_ = nullptr;
-
-	// ヒエラルキーで選択中のオブジェクト（-1 = 未選択）
-	int32_t selectedObjectIndex_ = -1;
 
 	// ────────────────────────────────────────────────────────────────
 	// スプライト（まだコンポーネント化していない）
@@ -104,10 +99,9 @@ private:
 	Transform uvTransformSprite_{
 		{ 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
 
+	// ────────────────────────────────────────────────────────────────
 	// グリッドの設定
+	// ────────────────────────────────────────────────────────────────
 	static constexpr int32_t kGridHalfCount = 10;    // 中心から何マス伸ばすか
 	static constexpr float   kGridSpacing = 1.0f;    // 1マスの大きさ
-
-	// ゲームビューが操作対象か（エディタから毎フレーム伝えられる）
-	bool isGameViewActive_ = false;
 };

@@ -68,7 +68,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -96,7 +96,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -123,7 +123,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -153,14 +153,19 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\3d\ModelManager.cpp" />
     <ClCompile Include="Engine\3d\Object3dPipeline.cpp" />
     <ClCompile Include="Engine\3d\PrimitiveDrawer.cpp" />
+    <ClCompile Include="Engine\asset\AssetDatabase.cpp" />
     <ClCompile Include="Engine\base\CrashHandler.cpp" />
     <ClCompile Include="Engine\base\DirectXCommon.cpp" />
+    <ClCompile Include="Engine\base\GameTime.cpp" />
     <ClCompile Include="Engine\base\Logger.cpp" />
     <ClCompile Include="Engine\base\RenderTexture.cpp" />
     <ClCompile Include="Engine\base\TextureManager.cpp" />
     <ClCompile Include="Engine\base\WinApp.cpp" />
     <ClCompile Include="Engine\components\MeshRenderer.cpp" />
+    <ClCompile Include="Engine\components\Rotator.cpp" />
     <ClCompile Include="Engine\editor\DebugCamera.cpp" />
+    <ClCompile Include="Engine\editor\Editor.cpp" />
+    <ClCompile Include="Engine\editor\EditorLayout.cpp" />
     <ClCompile Include="Engine\input\Input.cpp" />
     <ClCompile Include="Engine\loader\ObjLoader.cpp" />
     <ClCompile Include="Engine\loader\PrimitiveModel.cpp" />
@@ -196,7 +201,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="Game\GameScene.cpp" />
-    <ClCompile Include="Game\GameTime.cpp" />
     <ClCompile Include="Game\main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -242,14 +246,19 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\3d\Object3dPipeline.h" />
     <ClInclude Include="Engine\3d\Object3dStructs.h" />
     <ClInclude Include="Engine\3d\PrimitiveDrawer.h" />
+    <ClInclude Include="Engine\asset\AssetDatabase.h" />
     <ClInclude Include="Engine\base\CrashHandler.h" />
     <ClInclude Include="Engine\base\DirectXCommon.h" />
+    <ClInclude Include="Engine\base\GameTime.h" />
     <ClInclude Include="Engine\base\Logger.h" />
     <ClInclude Include="Engine\base\RenderTexture.h" />
     <ClInclude Include="Engine\base\TextureManager.h" />
     <ClInclude Include="Engine\base\WinApp.h" />
     <ClInclude Include="Engine\components\MeshRenderer.h" />
+    <ClInclude Include="Engine\components\Rotator.h" />
     <ClInclude Include="Engine\editor\DebugCamera.h" />
+    <ClInclude Include="Engine\editor\Editor.h" />
+    <ClInclude Include="Engine\editor\EditorLayout.h" />
     <ClInclude Include="Engine\input\Input.h" />
     <ClInclude Include="Engine\loader\ObjLoader.h" />
     <ClInclude Include="Engine\loader\PrimitiveModel.h" />
@@ -270,7 +279,6 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
     <ClInclude Include="Game\GameScene.h" />
-    <ClInclude Include="Game\GameTime.h" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="externals\imgui\LICENSE.txt" />
