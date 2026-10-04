@@ -229,6 +229,7 @@ void Editor::ImportDroppedFiles() {
 }
 
 void Editor::DrawAssetPanel() {
+#ifdef USE_IMGUI
 	// BeginPanel は戻り値に関係なく EndPanel と対にする（ImGui::Begin と同じ規則）
 	if (!layout_.BeginPanel(EditorPanel::Asset)) {
 		layout_.EndPanel();
@@ -320,6 +321,7 @@ void Editor::DrawAssetPanel() {
 	}
 
 	layout_.EndPanel();
+#endif
 }
 
 // ════════════════════════════════════════════════════════════════════

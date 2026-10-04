@@ -65,6 +65,7 @@ namespace {
 //   中央（ビュー）は「残り全部」なので、リサイズに自動で追従する
 // ════════════════════════════════════════════════════════════════════
 void EditorLayout::Update() {
+#ifdef USE_IMGUI
 	const ImGuiViewport* viewport = ImGui::GetMainViewport();
 	const ImGuiStyle& style = ImGui::GetStyle();
 
@@ -101,6 +102,7 @@ void EditorLayout::Update() {
 	{ originX + kHierarchyWidth, middleY, viewWidth, middleHeight };
 	rects_[ToIndex(EditorPanel::Inspector)] =
 	{ originX + kHierarchyWidth + viewWidth, middleY, kInspectorWidth, middleHeight };
+#endif
 }
 
 // ════════════════════════════════════════════════════════════════════
