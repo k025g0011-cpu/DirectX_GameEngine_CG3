@@ -4,6 +4,7 @@
 #include <format>
 #include <fstream>
 #include <string>
+#include <assert.h>
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
@@ -56,6 +57,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	std::string dateString = std::format("{:%Y%m%d_%H%M%S}", localTime);
 	std::ofstream logStream(std::string("logs/") + dateString + ".log");
 
+	//assert(false && "assertテストだよ");
 	// ════════════════════════════════════════════════════════════════
 	// エンジンの道具を用意する
 	//   順序が重要。上から順に依存している
