@@ -93,3 +93,68 @@ ModelData PrimitiveModel::CreateSphere(uint32_t subdivision, const std::string& 
 
 	return modelData;
 }
+
+// ════════════════════════════════════════════════════════════════════
+// XY 平面に四角形を1枚作る
+//   インデックスは使わない（四角形では節約にならず、使う側が複雑になるだけ）
+// ════════════════════════════════════════════════════════════════════
+ModelData PrimitiveModel::CreatePlane(float size, const std::string& texturePath) {
+
+	ModelData modelData;
+
+	// 中心を原点に置くので、半分の長さだけ上下左右に広げる
+	const float half = size * 0.5f;
+
+	// ────────────────────────────────────────
+	// 四隅の座標と、貼り付ける UV
+	//
+	//    TL(0,0) ──────── TR(1,0)      ← 画面の上
+	//        │  ＼          │
+	//        │     ＼       │
+	//    BL(0,1) ──────── BR(1,1)      ← 画面の下
+	//
+	//   UV は左上が (0,0)、右下が (1,1)。画像ファイルの並びと同じ
+	// ────────────────────────────────────────
+	const Vector3 topLeft = { -half,  half, 0.0f };
+	const Vector3 topRight = { half,  half, 0.0f };
+	const Vector3 bottomLeft = { -half, -half, 0.0f };
+	const Vector3 bottomRight = { half, -half, 0.0f };
+
+	// 手前（カメラ側 = -Z 方向）を向く板にする
+	const Vector3 normal = { 0.0f, 0.0f, -1.0f };
+
+	// ────────────────────────────────────────
+	// 三角形2枚ぶんの頂点を、時計回りになるよう並べる
+	//   DirectX の既定では「画面上で時計回り＝表」
+	// ────────────────────────────────────────
+	modelData.vertices.resize(6);
+
+	// 1枚目　TL → TR → BL
+	modelData.vertices[0] = { topLeft,     { 0.0f, 0.0f }, normal };
+	modelData.vertices[1] = { topRight,    { 1.0f, 0.0f }, normal };
+	modelData.vertices[2] = { bottomLeft,  { 0.0f, 1.0f }, normal };
+
+	// 2枚目　BL → TR → BR
+	modelData.vertices[3] = { bottomLeft,  { 0.0f, 1.0f }, normal };
+	modelData.vertices[4] = { topRight,    { 1.0f, 0.0f }, normal };
+	modelData.vertices[5] = { bottomRight, { 1.0f, 1.0f }, normal };
+
+	// ────────────────────────────────────────
+	// 既定のマテリアルを1つ用意する
+	// ────────────────────────────────────────
+	MaterialData material{};
+	material.name = "Plane";
+	material.textureFilePath = texturePath;
+	modelData.materials.push_back(material);
+
+	// 全体を1つの Mesh として扱う（インデックスなし描画）
+	Mesh mesh{};
+	mesh.materialIndex = 0;
+	mesh.startVertex = 0;
+	mesh.vertexCount = static_cast<uint32_t>(modelData.vertices.size());
+	mesh.startIndex = 0;
+	mesh.indexCount = 0;   // ★0 にすると Model::Draw が DrawInstanced を選ぶ
+	modelData.meshes.push_back(mesh);
+
+	return modelData;
+}

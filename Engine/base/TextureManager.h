@@ -24,7 +24,11 @@ public:
 	/// <returns>SRV ヒープ上の番号。描画時にこれを使う</returns>
 	uint32_t Load(const std::string& filePath);
 
-	/// <summary>SRV ヒープ上の番号から、シェーダーに渡す GPU ハンドルを得る</summary>
+	/// <summary>
+	/// 指定したテクスチャ（SRV)の GPU ディスクリプタハンドルを取得する
+	/// </summary>
+	/// <param name="srvIndex">SRVの管理インデックス(テクスチャ番号）</param>
+	/// <returns> GPU から直接読み取れる、ディスクリプタヒープ上の引数で受け取った番号の SRV アドレス（住所）</returns>
 	D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpuHandle(uint32_t srvIndex) const;
 
 	/// <summary>読み込んだテクスチャの枚数（ImGui 表示用）</summary>
@@ -41,9 +45,18 @@ private:
 		uint32_t srvIndex = 0;
 	};
 
+	/// <summary>　1x1のマゼンタ画像を使って SRV を張る。Initialize から1回だけ呼ぶ　</summary>
+	/// <returns>　作った SRV　の番号</returns>
+	uint32_t CreateDummyTexture();
+	
+
+
 	// 借りているもの（所有していない）
 	DirectXCommon* dxCommon_ = nullptr;
 
 	// 読み込み済みのテクスチャ一覧
 	std::vector<TextureData> textures_;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> dummyResource_;
+	uint32_t dummySrvIndex_ = 0;
 };

@@ -4,6 +4,8 @@
 #include <d3d12.h>
 #include <wrl.h>
 
+#include "BlendMode.h"
+
 // 前方宣言（ポインタとしてしか使わないので #include 不要）
 class DirectXCommon;
 
@@ -15,19 +17,12 @@ class DirectXCommon;
 class Object3dPipeline {
 public:
 	// ────────────────────────────────────────────────────────────────
-	// ブレンドモード
-	//   PS の出力（Src）と、すでに画面にある色（Dest）をどう合成するか
+	// ブレンドモードは BlendMode.h に移動した
+	//   Object3dPipeline::BlendMode::Add という既存の書き方を
+	//   壊さないために、別名だけ残しておく
+	//   （全部の呼び出しが BlendMode:: になったら、この1行も消す）
 	// ────────────────────────────────────────────────────────────────
-	enum class BlendMode : uint32_t {
-		None,       // ブレンドしない。Src をそのまま上書き（不透明な物体）
-		Normal,     // 通常のαブレンド  Src×α + Dest×(1-α)   （半透明）
-		Add,        // 加算              Src×α + Dest          （光・炎・魔法）
-		Subtract,   // 減算              Dest - Src×α          （影・煙）
-		Multiply,   // 乗算              Src × Dest            （焼き込み）
-		Screen,     // スクリーン        Src×(1-Dest) + Dest   （明るく合成）
-
-		kMaxCount,  // ★種類数。配列のサイズに使う。必ず最後に置くこと
-	};
+	using BlendMode = ::BlendMode;
 
 	// ────────────────────────────────────────────────────────────────
 	// ルートパラメータ番号

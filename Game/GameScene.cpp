@@ -38,7 +38,7 @@ void GameScene::Initialize(const EngineContext& context) {
 	// モデルを用意する
 	//   ModelManager が所有するので、ここはポインタを借りるだけ
 	// ════════════════════════════════════════
-	sphereModel_ = context_.modelManager->Create("Sphere16",
+	sphereModel_ = context_.modelManager->Create("Sphere16",  // このモデル変数ローカル変数でいいかも
 		PrimitiveModel::CreateSphere(16, "resources/uvChecker.png"));
 
 	suzanneModel_ = context_.modelManager->Load("resources/suzanne.obj");
@@ -50,12 +50,35 @@ void GameScene::Initialize(const EngineContext& context) {
 	sphereObject_ = CreateGameObject("Sphere");
 	sphereObject_->GetTransform().translate = { -1.5f, 0.0f, 0.0f };
 	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
-	sphereObject_->AddComponent<Rotator>(Vector3{ 0.0f, 0.0f, 1.0f });
 
 	suzanneObject_ = CreateGameObject("Suzanne");
 	suzanneObject_->GetTransform().translate = { 1.5f, 0.0f, 0.0f };
 	suzanneObject_->AddComponent<MeshRenderer>(suzanneModel_);
-	suzanneObject_->AddComponent<Rotator>(Vector3{ 0.0f, 1.0f, 0.0f });
+
+
+	// ════════════════════════════════════════
+	// パーティクル
+	// ════════════════════════════════════════
+	particleSystem_.Initialize(context_, "resources/particle.png", 128);
+
+	// 最大数ぶん、格子状に配置しておく
+	//   粒の数をスライダーで増やすと、左上から順に現れる
+	const uint32_t maxParticleCount = particleSystem_.GetMaxInstanceCount();
+
+	for (uint32_t index = 0; index < maxParticleCount; ++index) {
+		Transform& transform = particleSystem_.GetTransform(index);
+
+		transform.scale = { 0.6f, 0.6f, 0.6f };
+		transform.rotate = { 0.0f, 0.0f, 0.0f };
+		transform.translate = {
+			static_cast<float>(index % 16) * 0.7f - 5.25f,   // 横に16個
+			static_cast<float>(index / 16) * 0.7f + 2.0f,    // 縦に積む
+			0.0f,
+		};
+	}
+
+	particleSystem_.SetInstanceCount(16);   // まずは1行ぶん
+
 
 	// ════════════════════════════════════════
 	// スプライト
@@ -108,6 +131,9 @@ void GameScene::Update() {
 
 	// ② ゲームカメラ
 	camera_.Update();
+
+	// パーティクルの行列を更新する（カメラが決まった後に呼ぶ）
+	particleSystem_.Update(editor_.GetViewProjectionMatrix());
 
 	// ════════════════════════════════════════
 	// ③ このゲーム固有のパネル
@@ -180,7 +206,13 @@ void GameScene::DrawScene(const Matrix4x4& viewProjectionMatrix) {
 		gameObject->Draw(viewProjectionMatrix);
 	}
 
-	// ④ スプライト
+	// ④ パーティクル（パイプラインが切り替わる）
+	particleSystem_.Draw();
+
+	// ⑤ スプライトは Object3d のパイプラインを使うので、戻してから描く
+	context_.object3dPipeline->SetPipeline();
+
+	// ⑥ スプライト
 	sprite_.Draw();
 }
 
@@ -257,6 +289,32 @@ void GameScene::DrawSettingsPanel() {
 		ImGui::DragFloat2("SpriteUVTranslate", &uvTransformSprite_.translate.x, 0.01f, -10.0f, 10.0f);
 		ImGui::DragFloat2("SpriteUVScale", &uvTransformSprite_.scale.x, 0.01f, -10.0f, 10.0f);
 		ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite_.rotate.z);
+
+		// ───── パーティクル ─────
+		ImGui::Separator();
+		ImGui::Text("パーティクル");
+
+		// 合成方法。BlendMode の並び順と一致させること
+		static const char* kBlendNames[] = {
+			"なし", "通常", "加算", "減算", "乗算", "スクリーン",
+		};
+		static_assert(IM_ARRAYSIZE(kBlendNames) ==
+			static_cast<int>(BlendMode::kMaxCount), "kBlendNames の数が合っていません");
+
+		int blendIndex = static_cast<int>(particleSystem_.GetBlendMode());
+		if (ImGui::Combo("合成", &blendIndex, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
+			particleSystem_.SetBlendMode(static_cast<BlendMode>(blendIndex));
+		}
+
+		// 粒の数
+		int instanceCount = static_cast<int>(particleSystem_.GetInstanceCount());
+		if (ImGui::SliderInt("粒の数", &instanceCount,
+			0, static_cast<int>(particleSystem_.GetMaxInstanceCount()))) {
+			particleSystem_.SetInstanceCount(static_cast<uint32_t>(instanceCount));
+		}
+
+		// 全粒で共有する色（αを下げると薄くなる）
+		ImGui::ColorEdit4("粒の色", &particleSystem_.GetMaterialData()->color.x);
 	}
 	editor_.EndPanel();
 

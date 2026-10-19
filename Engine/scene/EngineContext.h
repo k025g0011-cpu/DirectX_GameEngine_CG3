@@ -7,6 +7,7 @@ class TextureManager;
 class ModelManager;
 class AssetDatabase;
 class Object3dPipeline;
+class ParticlePipeline;
 class PrimitiveDrawer;
 class Input;
 class GameTime;
@@ -26,6 +27,7 @@ struct EngineContext {
 	ModelManager* modelManager = nullptr;
 	AssetDatabase* assetDatabase = nullptr;
 	Object3dPipeline* object3dPipeline = nullptr;
+	ParticlePipeline* particlePipeline = nullptr;
 	PrimitiveDrawer* primitiveDrawer = nullptr;
 	Input* input = nullptr;
 	GameTime* gameTime = nullptr;

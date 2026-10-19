@@ -12,6 +12,7 @@
 #include "Object3dStructs.h"   // DirectionalLight
 #include "Camera.h"
 #include "Editor.h"
+#include "ParticleSystem.h"   
 #include "GameObject.h"
 #include "Sprite.h"
 
@@ -84,6 +85,11 @@ private:
 	// スプライト（まだコンポーネント化していない）
 	// ────────────────────────────────────────────────────────────────
 	Sprite sprite_;
+
+	// ────────────────────────────────────────────────────────────────
+	// パーティクル
+	// ────────────────────────────────────────────────────────────────
+	ParticleSystem particleSystem_;
 
 	// ────────────────────────────────────────────────────────────────
 	// 平行光源（シーンに1つ）

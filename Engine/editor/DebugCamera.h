@@ -53,7 +53,7 @@ private:
 	// 累積回転行列（オイラー角 rotation_ は廃止）
 	Matrix4x4 matRot_{};
 	// ピボットポイント（回転と移動の中心）
-	Vector3 target_ = { 0.0f, 0.0f, 0.0f };
+	Vector3 target_ = { 0.0f, 1.0f, 0.0f };
 	// 注視点からカメラまでの距離
 	float distance_ = 5.0f;
 

@@ -16,6 +16,7 @@
 #include "ModelManager.h"
 #include "AssetDatabase.h" 
 #include "Object3dPipeline.h"
+#include "ParticlePipeline.h"          
 #include "PrimitiveDrawer.h"
 #include "EngineContext.h"
 #include "GameScene.h"
@@ -86,6 +87,9 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	Object3dPipeline object3dPipeline;
 	object3dPipeline.Initialize(&dxCommon);
 
+	ParticlePipeline particlePipeline;
+	particlePipeline.Initialize(&dxCommon);
+
 	PrimitiveDrawer primitiveDrawer;
 	primitiveDrawer.Initialize(&dxCommon);
 
@@ -142,6 +146,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	context.modelManager = &modelManager;
 	context.assetDatabase = &assetDatabase;
 	context.object3dPipeline = &object3dPipeline;
+	context.particlePipeline = &particlePipeline;
 	context.primitiveDrawer = &primitiveDrawer;
 	context.input = &input;
 	context.gameTime = &gameTime;
