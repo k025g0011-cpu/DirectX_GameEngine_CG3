@@ -1,6 +1,7 @@
 #include "WinApp.h"
 #include "Logger.h"      // ConvertString
 #include <shellapi.h>    //（DragAcceptFiles / DragQueryFile）
+#include <objbase.h>    // CoInitializeEx / CoUninitialize / COINIT_MULTITHREADED
 
 #pragma comment(lib, "shell32.lib")   
 #ifdef USE_IMGUI
@@ -176,6 +177,6 @@ Vector2 WinApp::GetDropPosition() const {
 // 後片付け
 // ════════════════════════════════════════════════════════════════════
 void WinApp::Finalize() {
-	CloseWindow(hwnd_);
+	DestroyWindow(hwnd_); // ウィンドウを破棄する
 	CoUninitialize();
 }

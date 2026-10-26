@@ -14,8 +14,9 @@
 class WinApp {
 public:
 	// クライアント領域のサイズ
-	static const int32_t kClientWidth = 1600;
-	static const int32_t kClientHeight = 900;
+	// コンパイル時に確定し、今後定義することのない変数であるため static constexpr
+	static constexpr int32_t kClientWidth = 1600; 
+	static constexpr int32_t kClientHeight = 900;
 
 	// ウィンドウプロシージャ
 	//   Windows から直接呼ばれるので static でなければならない

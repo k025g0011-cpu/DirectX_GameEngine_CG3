@@ -17,19 +17,30 @@ class WinApp;
 // ════════════════════════════════════════════════════════════════════
 class DirectXCommon {
 public:
+
+	DirectXCommon() = default;
+	~DirectXCommon();
+
+	DirectXCommon(const DirectXCommon&) = delete;					// コピーコンストラクタ禁止
+	DirectXCommon& operator= (const DirectXCommon& other) = delete;	// コピー代入演算子禁止
+
+	// - <コンパイル時に決定する定数>------------------------------------------------
+	
 	// バックバッファの数
-	static const uint32_t kBackBufferCount = 2;
+	static constexpr uint32_t kBackBufferCount = 2;
 
 	// RTV ディスクリプタヒープのサイズ
 	//   バックバッファ + オフスクリーン描画先 + 将来の G-Buffer 用
-	static const uint32_t kMaxRtvCount = 16;
+	static constexpr uint32_t kMaxRtvCount = 16;
 
 	// DSV ディスクリプタヒープのサイズ
 	//   スワップチェーン用 + オフスクリーン用 + 将来のシャドウマップ用
-	static const uint32_t kMaxDsvCount = 8;
+	static constexpr uint32_t kMaxDsvCount = 8;
 
 	// SRV ディスクリプタヒープのサイズ
-	static const uint32_t kMaxSrvCount = 128;
+	static constexpr uint32_t kMaxSrvCount = 128;
+
+	// -------------------------------------------------------------------------
 
 	// 初期化
 	void Initialize(WinApp* winApp, std::ostream& logStream);
@@ -125,6 +136,9 @@ private:
 
 	// GPU の処理完了を待つ
 	void WaitForGPU();
+
+	/// <summary>フェンス用イベントを閉じる。何度呼んでも安全</summary>
+	void CloseFenceEvent();
 
 	// ディスクリプタヒープを生成する
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> CreateDescriptorHeap(

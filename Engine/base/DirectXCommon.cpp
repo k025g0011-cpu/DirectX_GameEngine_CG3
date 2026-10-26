@@ -10,6 +10,36 @@
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxcompiler.lib")
 
+// ════════════════════════════════════════════════════════════════════
+// デストラクタ
+//   Finalize() の呼び忘れに対する保険
+//   ComPtr のメンバは何もしなくても自動で解放される
+// ════════════════════════════════════════════════════════════════════
+DirectXCommon::~DirectXCommon() {
+	CloseFenceEvent();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 後片付け
+//   解放の順序を自分で制御したいとき用。呼ばなくてもデストラクタが拾う
+// ════════════════════════════════════════════════════════════════════
+void DirectXCommon::Finalize() {
+	CloseFenceEvent();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// フェンス用イベントを閉じる
+//   閉じたら nullptr にするので、何度呼んでも安全
+// ════════════════════════════════════════════════════════════════════
+void DirectXCommon::CloseFenceEvent() {
+
+	if (fenceEvent_ == nullptr) {
+		return;
+	}
+
+	CloseHandle(fenceEvent_);
+	fenceEvent_ = nullptr;   // これを忘れると二重 Close になる
+}
 
 // ════════════════════════════════════════════════════════════════════
 // 初期化
@@ -24,11 +54,11 @@ void DirectXCommon::Initialize(WinApp* winApp, std::ostream& logStream) {
 	InitializeDevice();           // F-2
 	InitializeCommand();          // F-3
 	InitializeSwapChain();        // F-4
-	InitializeRenderTargetView(); // F-4
-	InitializeDepthStencilView(); // F-5
-	InitializeSrvHeap();          // F-5
-	InitializeDxcCompiler();      // F-5
-	InitializeViewport();         // F-5
+	InitializeRenderTargetView(); // F-5
+	InitializeDepthStencilView(); // F-6
+	InitializeSrvHeap();          // F-7
+	InitializeDxcCompiler();      // F-8
+	InitializeViewport();         // F-9
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -567,14 +597,6 @@ void DirectXCommon::WaitForGPU() {
 		fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
 		WaitForSingleObject(fenceEvent_, INFINITE);
 	}
-}
-
-// ════════════════════════════════════════════════════════════════════
-// 後片付け
-//   ComPtr でないもの（生のハンドル）だけ手動で解放する
-// ════════════════════════════════════════════════════════════════════
-void DirectXCommon::Finalize() {
-	CloseHandle(fenceEvent_);
 }
 
 
