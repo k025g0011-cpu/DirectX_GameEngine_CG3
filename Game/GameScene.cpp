@@ -172,8 +172,15 @@ void GameScene::DrawScene(const CameraData& camera) {
 	ID3D12GraphicsCommandList* commandList = context_.dxCommon->GetCommandList().Get();
 
 	// ① 線の描画（自前の RootSignature / PSO に切り替わる）
+	//    Reset → 積む → Draw の順。Draw より後に積んでも間に合わない
 	context_.primitiveDrawer->Reset();
 	DrawGrid();
+
+	// デバッグ表示は編集ビューのときだけ。ゲーム画面には出さない
+	if (editor_.GetViewMode() == ViewMode::Edit) {
+		DrawGizmos();
+	}
+
 	context_.primitiveDrawer->Draw(camera.viewProjectionMatrix);
 
 	// ② 3D用パイプラインに戻す
@@ -235,6 +242,20 @@ void GameScene::DrawGrid() {
 	}
 
 	drawer.DrawLine3d({ 0.0f, 0.0f, 0.0f }, { 0.0f, half, 0.0f }, kGreen);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// デバッグ用の線を集める
+//   PrimitiveDrawer は線を溜めるだけなので、ここで呼んでも
+//   パイプラインは切り替わらない（Draw は呼び出し側が1回だけ行う）
+// ════════════════════════════════════════════════════════════════════
+void GameScene::DrawGizmos() {
+
+	PrimitiveDrawer& drawer = *context_.primitiveDrawer;
+
+	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
+		gameObject->DrawGizmos(drawer);
+	}
 }
 
 // ════════════════════════════════════════════════════════════════════

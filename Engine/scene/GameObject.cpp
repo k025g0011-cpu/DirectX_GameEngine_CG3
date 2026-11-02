@@ -97,3 +97,19 @@ void GameObject::DrawInspector() {
 
 #endif
 }
+
+// ════════════════════════════════════════════════════════════════════
+// デバッグ用の線
+//   Draw と同じく、自分では何もせずコンポーネントに配るだけ
+// ════════════════════════════════════════════════════════════════════
+void GameObject::DrawGizmos(PrimitiveDrawer& drawer) {
+	if (!isActive_) {
+		return;
+	}
+
+	for (const std::unique_ptr<Component>& component : components_) {
+		if (component->IsEnabled()) {
+			component->DrawGizmos(drawer);
+		}
+	}
+}

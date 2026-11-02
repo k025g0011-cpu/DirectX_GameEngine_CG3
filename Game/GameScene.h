@@ -46,6 +46,9 @@ private:
 	/// <summary>基準グリッドを PrimitiveDrawer に予約する</summary>
 	void DrawGrid();
 
+	/// <summary>全オブジェクトのデバッグ線を PrimitiveDrawer に予約する</summary>
+	void DrawGizmos();
+
 	/// <summary>設定パネルの中身（このゲーム固有）</summary>
 	void DrawSettingsPanel();
 

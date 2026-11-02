@@ -4,6 +4,7 @@
 #include "Field.h"
 #include "GameObject.h"
 #include "GameTime.h"
+#include "PrimitiveDrawer.h"
 
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -12,9 +13,10 @@
 // このcppファイルの中だけで使う定数
 namespace {
 	// 1フレームに出せる上限
-	//   デバッガで止めた直後などに deltaTime が巨大になり、
-	//   一気に何千個も作ってしまうのを防ぐ
 	constexpr float kMaxEmitPerFrame = 64.0f;
+
+	// 発生範囲の線の色（黄色）
+	constexpr Vector4 kEmitAreaColor{ 1.0f, 0.9f, 0.2f, 1.0f };
 }
 
 
@@ -91,6 +93,46 @@ void ParticleEmitter::DrawParticles(const CameraData& camera) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// デバッグ用の線
+//   ① 自分の発生範囲
+//   ② 持っている場の効果範囲
+// ════════════════════════════════════════════════════════════════════
+void ParticleEmitter::DrawGizmos(PrimitiveDrawer& drawer) {
+
+	if (!showGizmos_) {
+		return;
+	}
+
+	// ────────────────────────────────────────────────────────────────
+	// ① 発生範囲
+	//     GameObject の位置を中心に、emitRange_ だけ広がった箱
+	//     MakeParticle() が粒を置く範囲と一致させること
+	// ────────────────────────────────────────────────────────────────
+	const Vector3& position = GetOwner()->GetTransform().translate;
+
+	AABB emitArea{};
+	emitArea.min = {
+		position.x - emitRange_.x,
+		position.y - emitRange_.y,
+		position.z - emitRange_.z,
+	};
+	emitArea.max = {
+		position.x + emitRange_.x,
+		position.y + emitRange_.y,
+		position.z + emitRange_.z,
+	};
+
+	DrawAABBWireframe(drawer, emitArea, kEmitAreaColor);
+
+	// ────────────────────────────────────────────────────────────────
+	// ② 場の効果範囲（色は場自身が決める）
+	// ────────────────────────────────────────────────────────────────
+	for (uint32_t index = 0; index < particleSystem_.GetFieldCount(); ++index) {
+		particleSystem_.GetFieldAt(index)->DrawGizmos(drawer);
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════
 // まとめて出す
 // ════════════════════════════════════════════════════════════════════
 void ParticleEmitter::Burst(uint32_t count) {
@@ -147,6 +189,8 @@ void ParticleEmitter::DrawInspector() {
 
 	// ───── 発生 ─────
 	ImGui::Checkbox("発生中", &isPlaying_);
+	ImGui::SameLine();
+	ImGui::Checkbox("範囲を表示", &showGizmos_);
 	ImGui::DragFloat("頻度 (個/秒)", &emitRate_, 0.5f, 0.0f, 500.0f, "%.1f");
 
 	ImGui::DragInt("まとめて出す数", &burstCount_, 1.0f, 1, 256);

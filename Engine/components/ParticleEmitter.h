@@ -32,6 +32,7 @@ public:
 	void Initialize() override;
 	void Update() override;
 	void DrawInspector() override;
+	void DrawGizmos(PrimitiveDrawer& drawer) override;
 	const char* GetTypeName() const override { return "ParticleEmitter"; }
 
 	// ───── 自分固有の機能 ─────
@@ -72,5 +73,7 @@ private:
 	float   lifeTimeMin_ = 1.0f;
 	float   lifeTimeMax_ = 3.0f;
 	float   particleScale_ = 0.6f;
+	// デバッグ表示を出すか
+	bool    showGizmos_ = true;
 };
 

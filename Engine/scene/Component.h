@@ -9,6 +9,7 @@
 //   ここで #include すると GameObject.h ⇔ Component.h の循環になる
 // ────────────────────────────────────────────────────────────────────
 class GameObject;
+class PrimitiveDrawer;
 struct EngineContext;
 
 // ════════════════════════════════════════════════════════════════════
@@ -48,6 +49,12 @@ public:
 
 	/// <summary>インスペクタに自分の設定項目を描く</summary>
 	virtual void DrawInspector() {}
+
+	/// <summary>デバッグ用の線を積む（範囲や向きの可視化）</summary>
+	///   PrimitiveDrawer は線を溜めるだけなので、ここで呼んでも
+	///   パイプラインは切り替わらない
+	/// <param name="drawer">線を積む先</param>
+	virtual void DrawGizmos(PrimitiveDrawer& drawer) { (void)drawer; }
 
 	/// <summary>インスペクタの見出しに出す名前。実装必須</summary>
 	virtual const char* GetTypeName() const = 0;

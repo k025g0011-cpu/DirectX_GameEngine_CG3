@@ -4,6 +4,7 @@
 
 // 前方宣言（ポインタ・参照でしか使わない）
 struct Particle;
+class PrimitiveDrawer;
 
 // ════════════════════════════════════════════════════════════════════
 // 軸平行境界ボックス（Axis-Aligned Bounding Box）
@@ -16,6 +17,10 @@ struct AABB {
 	/// <summary>点がこの箱の中にあるか</summary>
 	bool Contains(const Vector3& point) const;
 };
+
+/// <summary>AABB を12本の線で描く（ワイヤーフレーム）</summary>
+///   AABB と一緒に置いてある。将来 AABB を MathUtility へ移すときは一緒に移す
+void DrawAABBWireframe(PrimitiveDrawer& drawer, const AABB& area, const Vector4& color);
 
 // ════════════════════════════════════════════════════════════════════
 // 場（Field）の基底
@@ -51,6 +56,8 @@ public:
 	/// <summary>この位置が効果範囲内か。形を変えたい派生は上書きする</summary>
 	virtual bool IsInside(const Vector3& position) const { return area_.Contains(position); }
 
+	/// <summary>効果範囲を線で描く。形を変えた派生は上書きする</summary>
+	virtual void DrawGizmos(PrimitiveDrawer& drawer) const;
 	// ────────────────────────────────────────────────────────────────
 	// 共通の機能
 	// ────────────────────────────────────────────────────────────────
