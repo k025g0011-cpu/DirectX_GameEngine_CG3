@@ -1,6 +1,12 @@
 #include "DebugCamera.h"
-
 #include "Input.h"   // ここで初めて実体が必要になる
+#include "MathUtility.h"   // Matrix4x4 / TransformNormal
+
+// このcppファイルの中だけで使う定数
+namespace {
+	// 注視点を通り抜けて裏返るのを防ぐ最小距離
+	constexpr float kMinDistance = 0.5f;
+}
 
 // ════════════════════════════════════════
 // 初期化
@@ -19,8 +25,9 @@ void DebugCamera::Initialize(Input* input, int32_t clientWidth, int32_t clientHe
 		0.1f,                                                               // ニアクリップ
 		100.0f);                                                            // ファークリップ
 
-	// 初期状態のビュー行列も作っておく（最初のフレームで不定にならないように）
-	Update();
+	// 初期状態の行列も作っておく（最初のフレームで不定にならないように）
+	// 入力処理は呼ばない。Input::Update() がまだ走っていない可能性があるため
+	UpdateMatrices();
 }
 
 // ════════════════════════════════════════
@@ -30,32 +37,33 @@ void DebugCamera::Initialize(Input* input, int32_t clientWidth, int32_t clientHe
 // ════════════════════════════════════════
 void DebugCamera::Update() {
 
-	// ────────────────────────────────────────
-	// ① 入力によるカメラの移動や回転
-	//    ゲームビューの上にマウスがあるときだけ処理する
-	// ────────────────────────────────────────
+	// ゲームビューの上にマウスがあるときだけ入力を処理する
 	if (isInputEnabled_) {
+		UpdateMouseControl();
+		UpdateKeyboardMove();
+	}
 
-		Vector2 mouseMove = input_->GetMouseMove();
+	// 行列は入力の有無にかかわらず毎フレーム更新する
+	// （行列がゼロのままになるのを防ぐため）
+	UpdateMatrices();
+}
 
-		// ─── 左ドラッグ：回転（累積回転行列に合成） ───
-		if (input_->PushMouseButton(0)) {
-			// 今回フレームでの追加回転角（累積した角度ではなく差分）
-			float deltaX = mouseMove.y * rotateSpeed_;   // 縦ドラッグ → 見上げ／見下ろし = 回転軸はX
-			float deltaY = mouseMove.x * rotateSpeed_;   // 横ドラッグ → 左右の首振り     = 回転軸はY
+// ════════════════════════════════════════
+// マウス操作
+//   中ドラッグ          : 回転（オービット）
+//   Shift + 中ドラッグ  : 注視点の平行移動（パン）
+//   ホイール            : ズーム
+// ════════════════════════════════════════
+void DebugCamera::UpdateMouseControl() {
 
-			// 追加回転分の回転行列を生成（毎フレームの回転量行列をここで作るmatRotDelta）
-			Matrix4x4 matRotDelta = MakeIdentity4x4();
-			matRotDelta = matRotDelta * MakeRotateXMatrix(deltaX); // 回転軸はXなのでXRotate関数
-			matRotDelta = matRotDelta * MakeRotateYMatrix(deltaY); // 回転軸はXなのでYRotate関数
+	const Vector2 mouseMove = input_->GetMouseMove();
 
-			// 累積の回転行列を合成
-			// Delta を左に置く＝先に適用＝カメラのローカル軸で回る（順序を逆にすると破綻する）
-			matRot_ = matRotDelta * matRot_;
-		}
+	// ─── 中ボタン（2番）を押している間 ───
+	//   Shift の有無でパンと回転を切り替える（排他）
+	if (input_->PushMouseButton(2)) {
 
-		// ─── 中ドラッグ：注視点の平行移動（カメラのローカルXY方向へ） ───
-		if (input_->PushMouseButton(2)) {
+		if (IsShiftPressed()) {
+			// ─── パン：注視点をカメラのローカルXY方向へ動かす ───
 			// 掴んだ景色が指に付いてくる感覚にするため X は符号を反転する
 			Vector3 move = { -mouseMove.x * moveSpeed_, mouseMove.y * moveSpeed_, 0.0f };
 			// ローカル方向をワールド方向へ変換（平行移動成分は無視される）
@@ -63,40 +71,56 @@ void DebugCamera::Update() {
 			target_.x += move.x;
 			target_.y += move.y;
 			target_.z += move.z;
+
+		} else {
+			// ─── オービット：ターンテーブル方式 ───
+			const float pitch = mouseMove.y * rotateSpeed_;   // 縦ドラッグ → 見上げ／見下ろし
+			const float yaw = mouseMove.x * rotateSpeed_;   // 横ドラッグ → 左右の首振り
+
+			// ピッチはカメラのローカルX軸まわり（左に掛ける＝先に適用）
+			// ヨーはワールドY軸まわり        （右に掛ける＝後に適用）
+			// こうすると水平線が傾かない（Blender の既定の挙動）
+			matRot_ = MakeRotateXMatrix(pitch) * matRot_ * MakeRotateYMatrix(yaw);
 		}
+	}
 
-		// ─── キーボード：注視点の前後左右上下移動 ───
-		// 6方向を1つのベクトルに足し込む（斜め移動が自動で手に入る）
-		Vector3 keyMove = { 0.0f, 0.0f, 0.0f };
-		if (input_->PushKey(DIK_W)) { keyMove.z += keySpeed_; }   // 前
-		if (input_->PushKey(DIK_S)) { keyMove.z -= keySpeed_; }   // 後
-		if (input_->PushKey(DIK_D)) { keyMove.x += keySpeed_; }   // 右
-		if (input_->PushKey(DIK_A)) { keyMove.x -= keySpeed_; }   // 左
-		if (input_->PushKey(DIK_E)) { keyMove.y += keySpeed_; }   // 上
-		if (input_->PushKey(DIK_Q)) { keyMove.y -= keySpeed_; }   // 下
+	// ─── ホイール：注視点との距離（ズーム） ───
+	//   中ボタンの if の外。ドラッグ中でもホイールは効かせたい
+	const float wheel = input_->GetMouseWheel();
+	if (wheel != 0.0f) {
+		distance_ -= wheel * wheelSpeed_;   // 奥に回す＝近づく
+		// 注視点を通り抜けて裏返るのを防ぐ
+		if (distance_ < kMinDistance) { distance_ = kMinDistance; }
+	}
+}
 
-		// 角度は毎フレーム変わるので、移動ベクトルは毎回変換し直す（キャッシュ不可）
-		keyMove = TransformNormal(keyMove, matRot_);
-		target_.x += keyMove.x;
-		target_.y += keyMove.y;
-		target_.z += keyMove.z;
+// ════════════════════════════════════════
+// キーボードによる注視点の移動
+//   6方向を1つのベクトルに足し込む（斜め移動が自動で手に入る）
+// ════════════════════════════════════════
+void DebugCamera::UpdateKeyboardMove() {
 
-		// ─── ホイール：注視点との距離（ズーム） ───
-		float wheel = input_->GetMouseWheel();
-		if (wheel != 0.0f) {
-			distance_ -= wheel * wheelSpeed_;   // 奥に回す＝近づく
-			// 注視点を通り抜けて裏返るのを防ぐ
-			const float kMinDistance = 0.5f;
-			if (distance_ < kMinDistance) { distance_ = kMinDistance; }
-		}
+	Vector3 keyMove = { 0.0f, 0.0f, 0.0f };
+	if (input_->PushKey(DIK_W)) { keyMove.z += keySpeed_; }   // 前
+	if (input_->PushKey(DIK_S)) { keyMove.z -= keySpeed_; }   // 後
+	if (input_->PushKey(DIK_D)) { keyMove.x += keySpeed_; }   // 右
+	if (input_->PushKey(DIK_A)) { keyMove.x -= keySpeed_; }   // 左
+	if (input_->PushKey(DIK_E)) { keyMove.y += keySpeed_; }   // 上
+	if (input_->PushKey(DIK_Q)) { keyMove.y -= keySpeed_; }   // 下
 
-	} 
+	// 角度は毎フレーム変わるので、移動ベクトルは毎回変換し直す（キャッシュ不可）
+	keyMove = TransformNormal(keyMove, matRot_);
+	target_.x += keyMove.x;
+	target_.y += keyMove.y;
+	target_.z += keyMove.z;
+}
 
-	// ────────────────────────────────────────
-	// ② ビュー行列の更新
-	//    入力の有無にかかわらず毎フレーム行う
-	//    （行列がゼロのままになるのを防ぐため）
-	// ────────────────────────────────────────
+// ════════════════════════════════════════
+// 行列の更新
+//   入力を一切見ない。状態（matRot_ / target_ / distance_）から
+//   行列を求めるだけの関数にしておく
+// ════════════════════════════════════════
+void DebugCamera::UpdateMatrices() {
 
 	// ピボット回転：注視点から distance_ だけ後ろへ下がった位置がカメラの座標
 	// ローカルの {0, 0, -distance_} を現在の姿勢で回せば、自動的に円軌道になる
@@ -117,4 +141,13 @@ void DebugCamera::Update() {
 
 	// ビュー×射影を合成しておく（Camera と同じ窓口を持たせる）
 	viewProjectionMatrix_ = viewMatrix_ * projectionMatrix_;
+}
+
+// ════════════════════════════════════════
+// 修飾キーの判定
+//   DirectInput は左右の Shift / Ctrl を別のキーとして扱う。
+//   片方しか見ないと、右側のキーを使う人には効かない
+// ════════════════════════════════════════
+bool DebugCamera::IsShiftPressed() const {
+	return input_->PushKey(DIK_LSHIFT) || input_->PushKey(DIK_RSHIFT);
 }

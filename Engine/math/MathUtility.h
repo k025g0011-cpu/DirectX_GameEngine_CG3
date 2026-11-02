@@ -3,6 +3,7 @@
 #include "Vector2.h"
 #include "Vector3.h"
 #include "Vector4.h"
+#include <numbers>
 
 
 /// <summary>
@@ -17,7 +18,7 @@ struct Transform {
 // ════════════════════════════════════════
 // 円周率
 // ════════════════════════════════════════
-const float kPi = 3.14159265358979323846f;
+inline constexpr float kPi = std::numbers::pi_v<float>;
 
 // ============================================
 // Vector3 演算子

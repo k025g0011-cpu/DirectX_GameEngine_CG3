@@ -13,10 +13,11 @@ class Input;
 //   回転は累積回転行列で管理する（オイラー角のジンバルロック回避）
 //   注視点(target_)を中心に回り込むピボット回転
 //
-//   左ドラッグ   : 回転（回り込み）
-//   中ドラッグ   : 注視点の平行移動
-//   ホイール     : 注視点との距離（ズーム）
-//   WASD / QE    : 注視点の前後左右上下移動
+//   ── 操作（Blender 準拠） ──
+//   中ドラッグ          : 回転（オービット）
+//   Shift + 中ドラッグ  : 注視点の平行移動（パン）
+//   ホイール            : 注視点との距離（ズーム）
+//   WASD / QE           : 注視点の前後左右上下移動
 // ════════════════════════════════════════
 class DebugCamera {
 public:
@@ -46,6 +47,17 @@ public:
 	bool IsInputEnabled() const { return isInputEnabled_; }
 
 private:
+
+	// 各操作の処理関数(すべてUpdate関数でまとめて呼び出す）
+	// ───── Update() の内訳 ─────
+	void UpdateMouseControl();	// 中ドラッグ（回転・パン）とホイール
+	void UpdateKeyboardMove();	// WASD / QE
+	void UpdateMatrices();		// カメラ座標とビュー行列の計算
+
+	// ───── 修飾キーの判定 ─────
+	bool IsShiftPressed() const;
+	bool IsCtrlPressed() const;
+
 	// 借り物のポインタ。deleteしない
 	Input* input_ = nullptr;
 

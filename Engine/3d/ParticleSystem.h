@@ -3,14 +3,19 @@
 #include <cstdint>
 #include <d3d12.h>
 #include <string>
-#include <vector>
+#include <list>
 #include <wrl.h>
+#include <vector>
+#include <memory>
 
 #include "BlendMode.h"
 #include "EngineContext.h"
-#include "MathUtility.h"       // Transform / Matrix4x4
+#include "CameraData.h"
+#include "Field.h"
+#include "MathUtility.h"       // Matrix4x4
 #include "ModelData.h"
-#include "Object3dStructs.h"   // Material / TransformationMatrix
+#include "Object3dStructs.h"   // Material
+#include "Particle.h"
 
 // ════════════════════════════════════════════════════════════════════
 // パーティクル（板ポリゴンの群れ）
@@ -30,23 +35,44 @@ public:
 	void Initialize(const EngineContext& context,
 		const std::string& texturePath, uint32_t maxInstanceCount = 128);
 
-	/// <summary>Transform から行列を計算して GPU 側の配列に書き込む</summary>
-	void Update(const Matrix4x4& viewProjectionMatrix);
+	/// <summary>粒を進める（移動・寿命・削除）。カメラは要らない</summary>
+	/// <param name="deltaTime">進める秒数</param>
+	void Update(float deltaTime);
 
-	/// <summary>描画。インスタンス数ぶんを1回のドローコールで描く</summary>
-	void Draw();
+	/// <summary>行列を GPU 側へ書き込み、1回のドローコールで描く</summary>
+	/// <param name="camera">今のカメラ。ビルボードにビュー行列を使う</param>
+	void Draw(const CameraData& camera);
 
 	// ────────────────────────────────────────────────────────────────
 	// 粒の操作
 	// ────────────────────────────────────────────────────────────────
+	/// <summary>GPU 側に確保してある枠の数。これ以上は同時に描けない</summary>
 	uint32_t GetMaxInstanceCount() const { return maxInstanceCount_; }
-	uint32_t GetInstanceCount() const { return instanceCount_; }
 
-	/// <summary>実際に描く粒の数。最大数を超えたら止まる</summary>
-	void SetInstanceCount(uint32_t count);
+	/// <summary>直前の Update で実際に描いた粒の数</summary>
+	uint32_t GetDrawCount() const { return drawCount_; }
 
-	/// <summary>index 番目の粒の Transform。参照なのでそのまま書き換えられる</summary>
-	Transform& GetTransform(uint32_t index);
+	/// <summary>CPU 側に存在する粒の数。上限はない</summary>
+	size_t GetCount() const { return particles_.size(); }
+
+	/// <summary>粒を1個追加する。中身は呼ぶ側が組み立てる</summary>
+	void Add(const Particle& particle);
+
+	/// <summary>全部消す</summary>
+	void Clear();
+
+	// ────────────────────────────────────────────────────────────────
+	// 場（Field）
+	//   ここに登録された場が、毎フレーム粒に影響を与える
+	// ────────────────────────────────────────────────────────────────
+
+	/// <summary>場を追加する。所有権ごと受け取る</summary>
+	void AddField(std::unique_ptr<Field> field);
+
+	uint32_t GetFieldCount() const { return static_cast<uint32_t>(fields_.size()); }
+
+	/// <summary>index 番目の場。インスペクタから設定をいじるため</summary>
+	Field* GetFieldAt(uint32_t index) const { return fields_[index].get(); }
 
 	/// <summary>全粒で共有するマテリアル（色・UV）</summary>
 	Material* GetMaterialData() const { return materialData_; }
@@ -55,6 +81,9 @@ public:
 	BlendMode GetBlendMode() const { return blendMode_; }
 	void SetBlendMode(BlendMode blendMode) { blendMode_ = blendMode; }
 
+	/// <summary>板を常にカメラへ向けるか。false にすると板ポリだとバレる</summary>
+	bool IsBillboard() const { return useBillboard_; }
+	void SetBillboard(bool useBillboard) { useBillboard_ = useBillboard; }
 private:
 	// 初期化の内訳
 	void CreateVertexBuffer(const ModelData& modelData);
@@ -82,17 +111,26 @@ private:
 	// Instancing 用の行列配列（StructuredBuffer）
 	// ────────────────────────────────────────────────────────────────
 	Microsoft::WRL::ComPtr<ID3D12Resource> instancingResource_;
-	TransformationMatrix* instancingData_ = nullptr;   // Map したままの書き込み先
+	ParticleForGPU* instancingData_ = nullptr;    // Map したままの書き込み先
 	uint32_t instancingSrvIndex_ = 0;
 
 	// ────────────────────────────────────────────────────────────────
 	// CPU 側の粒（これを編集して Update で GPU へ送る）
 	// ────────────────────────────────────────────────────────────────
-	std::vector<Transform> transforms_;
-	uint32_t maxInstanceCount_ = 0;
-	uint32_t instanceCount_ = 0;
+	// CPU 側の粒。寿命が尽きたものは Update で本当に erase される
+	//   個数に上限はない。GPU に送れるのは maxInstanceCount_ 個まで
+	std::list<Particle> particles_;
+
+	uint32_t maxInstanceCount_ = 0;   // GPU 側の枠の数
+	uint32_t drawCount_ = 0;          // 今フレーム描いた数（Update が決める）
 
 	// 合成方法。パーティクルの性質なので、描画のたびに外から渡すのではなく自分で持つ
 	BlendMode blendMode_ = BlendMode::Add;
+
+	// ビルボードするか。切り替えられるようにする
+	bool useBillboard_ = true;
+
+	// この粒たちに影響を与える場。所有する
+	std::vector<std::unique_ptr<Field>> fields_;
 };
 

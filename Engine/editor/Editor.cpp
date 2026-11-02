@@ -100,6 +100,41 @@ const Matrix4x4& Editor::GetViewProjectionMatrix() const {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// いま使うカメラのビュー行列
+//   ビルボードのように「カメラの向き」が必要なときに使う
+// ════════════════════════════════════════════════════════════════════
+const Matrix4x4& Editor::GetViewMatrix() const {
+	return (viewMode_ == ViewMode::Edit)
+		? debugCamera_.GetViewMatrix()
+		: gameCamera_->GetViewMatrix();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// いま使うカメラの射影行列
+// ════════════════════════════════════════════════════════════════════
+const Matrix4x4& Editor::GetProjectionMatrix() const {
+	return (viewMode_ == ViewMode::Edit)
+		? debugCamera_.GetProjectionMatrix()
+		: gameCamera_->GetProjectionMatrix();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 今のカメラの行列一式
+//   3つ別々に取ると「別のカメラのものを混ぜる」事故が起きうるので、
+//   ここで1回にまとめて渡す
+// ════════════════════════════════════════════════════════════════════
+CameraData Editor::GetCameraData() const {
+
+	CameraData camera{};
+	camera.viewMatrix = GetViewMatrix();
+	camera.projectionMatrix = GetProjectionMatrix();
+	camera.viewProjectionMatrix = GetViewProjectionMatrix();
+
+	return camera;
+}
+
+
+// ════════════════════════════════════════════════════════════════════
 // ツールバー（再生・コマ送り・速度・fps）
 // ════════════════════════════════════════════════════════════════════
 void Editor::DrawToolbar() {

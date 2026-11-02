@@ -27,7 +27,7 @@ public:
 
 	// ───── Component の実装 ─────
 	void Initialize() override;
-	void Draw(const Matrix4x4& viewProjectionMatrix) override;
+	void Draw(const CameraData& camera) override;
 	void DrawInspector() override;
 	const char* GetTypeName() const override { return "MeshRenderer"; }
 

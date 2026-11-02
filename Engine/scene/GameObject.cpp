@@ -34,14 +34,14 @@ void GameObject::Update() {
 // 描画
 //   PreDraw と PostDraw の間で呼ばれる。値は変えない
 // ════════════════════════════════════════════════════════════════════
-void GameObject::Draw(const Matrix4x4& viewProjectionMatrix) {
+void GameObject::Draw(const CameraData& camera) {
 	if (!isActive_) {
 		return;
 	}
 
 	for (const std::unique_ptr<Component>& component : components_) {
 		if (component->IsEnabled()) {
-			component->Draw(viewProjectionMatrix);
+			component->Draw(camera);
 		}
 	}
 }

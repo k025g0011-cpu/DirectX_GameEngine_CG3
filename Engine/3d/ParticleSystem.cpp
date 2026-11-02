@@ -36,15 +36,8 @@ void ParticleSystem::Initialize(const EngineContext& context,
 	}
 	textureSrvIndex_ = context_.textureManager->Load(resolvedTexturePath);
 
-	// CPU 側の粒を最大数ぶん用意する（中身は原点・等倍・無回転）
-	transforms_.resize(maxInstanceCount_);
-	for (Transform& transform : transforms_) {
-		transform.scale = { 1.0f, 1.0f, 1.0f };
-		transform.rotate = { 0.0f, 0.0f, 0.0f };
-		transform.translate = { 0.0f, 0.0f, 0.0f };
-	}
-
-	instanceCount_ = 0;   // 使う側が SetInstanceCount で決める
+	// CPU 側の粒は空から始まる。Add で増やしていく
+	drawCount_ = 0;   // Update が毎フレーム数え直す
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -94,7 +87,7 @@ void ParticleSystem::CreateInstancingResource() {
 	// ① 行列を maxInstanceCount_ 個ぶん置けるバッファを作る
 	//     UPLOAD ヒープなので Map したまま毎フレーム書き換えられる
 	// ────────────────────────────────────────────────────────────────
-	const size_t bufferSize = sizeof(TransformationMatrix) * maxInstanceCount_;
+	const size_t bufferSize = sizeof(ParticleForGPU) * maxInstanceCount_;
 
 	instancingResource_ = context_.dxCommon->CreateBufferResource(bufferSize);
 	instancingResource_->SetName(L"ParticleInstancingBuffer");
@@ -120,7 +113,7 @@ void ParticleSystem::CreateInstancingResource() {
 	srvDesc.Buffer.FirstElement = 0;                                    // 先頭から
 	srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;                  // 固定
 	srvDesc.Buffer.NumElements = maxInstanceCount_;                     // 何要素ぶんか
-	srvDesc.Buffer.StructureByteStride = sizeof(TransformationMatrix);  // 1要素のバイト数
+	srvDesc.Buffer.StructureByteStride = sizeof(ParticleForGPU);  // 1要素のバイト数
 
 	// 空き番号は配布係からもらう（固定値を書かない）
 	instancingSrvIndex_ = context_.dxCommon->AllocateSrv();
@@ -136,80 +129,165 @@ void ParticleSystem::CreateInstancingResource() {
 
 // ════════════════════════════════════════════════════════════════════
 // 更新
-//   Transform から行列を作って、GPU 側の配列に書き込む
+//   粒を進めて、寿命が尽きたものを消すだけ
+//   カメラに一切依存しないので、Component::Update() から呼べる
 // ════════════════════════════════════════════════════════════════════
-void ParticleSystem::Update(const Matrix4x4& viewProjectionMatrix) {
+void ParticleSystem::Update(float deltaTime) {
 
-	// 描く分だけ計算する。描かない粒の行列は計算しても無駄
-	for (uint32_t index = 0; index < instanceCount_; ++index) {
+	// ループ中に erase するので range-based for は使えない
+	for (auto it = particles_.begin(); it != particles_.end(); ) {
 
-		const Transform& transform = transforms_[index];
+		Particle& particle = *it;
 
-		const Matrix4x4 worldMatrix =
-			MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
+		// ─── 場の影響を受ける（速度が変わる） ───
+		//   位置を動かす前にやる。今フレームの加速がそのまま移動に反映される
+		for (const std::unique_ptr<Field>& field : fields_) {
 
-		instancingData_[index].WVP = worldMatrix * viewProjectionMatrix;
-		instancingData_[index].World = worldMatrix;
+			if (!field->IsEnabled()) {
+				continue;
+			}
+			if (!field->IsInside(particle.transform.translate)) {
+				continue;
+			}
+
+			field->Apply(particle, deltaTime);
+		}
+		// ─── 時間を進める ───
+		particle.currentTime += deltaTime;
+
+		// ─── 速度で動かす ───
+		particle.transform.translate.x += particle.velocity.x * deltaTime;
+		particle.transform.translate.y += particle.velocity.y * deltaTime;
+		particle.transform.translate.z += particle.velocity.z * deltaTime;
+
+		// ─── 寿命が尽きたら、本当に消す ───
+		if (!particle.IsAlive()) {
+			it = particles_.erase(it);   // erase は「次の要素」を返す
+			continue;                    // ここで ++it してはいけない
+		}
+
+		++it;
 	}
 }
 
 // ════════════════════════════════════════════════════════════════════
 // 描画
-//   粒が何個あっても、ドローコールは1回だけ
+//   ① 生きている粒の行列を、GPU 側の配列へ「詰めて」書く
+//   ② 描画コマンドを積む。粒が何個あってもドローコールは1回だけ
+//
+//   GPU 用のバッファに書くのは「描画の準備」なので、ここでやる
+//   （MeshRenderer が Draw の中で定数バッファに書くのと同じ扱い）
 // ════════════════════════════════════════════════════════════════════
-void ParticleSystem::Draw() {
+void ParticleSystem::Draw(const CameraData& camera) {
 
-	// 1個も無いなら何もしない
-	if (instanceCount_ == 0) {
+	// ────────────────────────────────────────────────────────────────
+	// ① ビルボード行列（粒ごとに変わらないので1回だけ作る）
+	//     ビュー行列はカメラのワールド行列の逆行列なので、逆行列を取れば戻る
+	// ────────────────────────────────────────────────────────────────
+	Matrix4x4 billboardMatrix = Inverse(camera.viewMatrix);
+
+	// 平行移動の成分（4行目）を消して、回転だけ残す
+	billboardMatrix.m[3][0] = 0.0f;
+	billboardMatrix.m[3][1] = 0.0f;
+	billboardMatrix.m[3][2] = 0.0f;
+
+	// ────────────────────────────────────────────────────────────────
+	// ② 生きている粒を、GPU 側の配列の先頭から詰めて書く
+	//     erase しないので range-based for が使える
+	// ────────────────────────────────────────────────────────────────
+	uint32_t drawCount = 0;
+
+	for (const Particle& particle : particles_) {
+
+		// 枠が埋まったら、それ以上は書けない
+		if (drawCount >= maxInstanceCount_) {
+			break;
+		}
+
+		// 回転の作り方だけが違う
+		Matrix4x4 worldMatrix{};
+
+		if (useBillboard_) {
+			worldMatrix =
+				MakeScaleMatrix(particle.transform.scale)
+				* billboardMatrix
+				* MakeTranslateMatrix(particle.transform.translate);
+		} else {
+			worldMatrix = MakeAffineMatrix(
+				particle.transform.scale,
+				particle.transform.rotate,
+				particle.transform.translate);
+		}
+
+		instancingData_[drawCount].WVP = worldMatrix * camera.viewProjectionMatrix;
+		instancingData_[drawCount].World = worldMatrix;
+
+		// 寿命によるフェード
+		//   Update で死んだ粒は消えているので、ここでは必ず lifeTime > 0
+		const float lifeRatio = particle.currentTime / particle.lifeTime;
+		const float alpha = 1.0f - lifeRatio;
+
+		instancingData_[drawCount].color = particle.color;
+		instancingData_[drawCount].color.w = particle.color.w * alpha;
+
+		++drawCount;
+	}
+
+	drawCount_ = drawCount;
+
+	// ────────────────────────────────────────────────────────────────
+	// ③ 1個も無いなら、コマンドは積まない
+	// ────────────────────────────────────────────────────────────────
+	if (drawCount_ == 0) {
 		return;
 	}
 
 	ID3D12GraphicsCommandList* commandList = context_.dxCommon->GetCommandList().Get();
 
-	// ① パイプライン（RootSignature + PSO + トポロジ）
+	// パイプライン（RootSignature + PSO + トポロジ）
 	context_.particlePipeline->SetPipeline(blendMode_);
 
-	// ② 頂点バッファ（板1枚ぶん）
+	// 頂点バッファ（板1枚ぶん）
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView_);
 
-	// ③ マテリアル（PS b0）
+	// マテリアル（PS b0）
 	commandList->SetGraphicsRootConstantBufferView(
 		ParticlePipeline::kRootParameterMaterial,
 		materialResource_->GetGPUVirtualAddress());
 
-	// ④ 行列の配列（VS t0）… ここが Instancing の肝
+	// 行列の配列（VS t0）… ここが Instancing の肝
 	commandList->SetGraphicsRootDescriptorTable(
 		ParticlePipeline::kRootParameterInstancing,
 		context_.dxCommon->GetSrvGpuDescriptorHandle(instancingSrvIndex_));
 
-	// ⑤ テクスチャ（PS t0）
+	// テクスチャ（PS t0）
 	commandList->SetGraphicsRootDescriptorTable(
 		ParticlePipeline::kRootParameterTexture,
 		context_.textureManager->GetSrvGpuHandle(textureSrvIndex_));
 
-	// ⑥ 描画！ 6頂点の板を instanceCount_ 個ぶん、1回の命令で描く
-	/*
-	第1引数：1インスタンスあたりの頂点数。板ポリなので6
-	第2引数：インスタンス数。SV_InstanceID が 0 〜 これ-1 になる
-	第3引数：頂点バッファの何番目から読むか
-	第4引数：SV_InstanceID の開始番号
-	*/
-	commandList->DrawInstanced(vertexCount_, instanceCount_, 0, 0);
+	// 描画！ 6頂点の板を drawCount_ 個ぶん、1回の命令で描く
+	commandList->DrawInstanced(vertexCount_, drawCount_, 0, 0);
+}
+// ════════════════════════════════════════════════════════════════════
+// 粒を1個追加する
+//   最大数を超えても追加はできる。描かれるのが最大数までというだけ
+// ════════════════════════════════════════════════════════════════════
+void ParticleSystem::Add(const Particle& particle) {
+	particles_.push_back(particle);
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 描く粒の数を決める
+// 全部消す
 // ════════════════════════════════════════════════════════════════════
-void ParticleSystem::SetInstanceCount(uint32_t count) {
-	// 確保した数を超えると、バッファの外を読んで未定義動作になる
-	assert(count <= maxInstanceCount_);
-	instanceCount_ = count;
+void ParticleSystem::Clear() {
+	particles_.clear();
+	drawCount_ = 0;   // 次の Update まで Draw されても困らないように
 }
 
 // ════════════════════════════════════════════════════════════════════
-// index 番目の粒の Transform
+// 場を追加する
+//   unique_ptr を値で受け取る＝所有権をもらう
 // ════════════════════════════════════════════════════════════════════
-Transform& ParticleSystem::GetTransform(uint32_t index) {
-	assert(index < maxInstanceCount_);
-	return transforms_[index];
+void ParticleSystem::AddField(std::unique_ptr<Field> field) {
+	fields_.push_back(std::move(field));
 }

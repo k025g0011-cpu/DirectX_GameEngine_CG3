@@ -23,8 +23,11 @@ PixelShaderOutput main(VertexShaderOutput input)
     float32_t4 transformedUV = mul(float32_t4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform);
     float32_t4 textureColor = gTexture.Sample(gSampler, transformedUV.xy);
 
-    // ライティングはしない。マテリアル色とテクスチャの掛け算だけ
-    output.color = gMaterial.color * textureColor;
+    // ライティングはしない。3つの色を掛け合わせる
+    //   gMaterial.color : 全粒で共通の色（ImGui の「粒の色」）
+    //   textureColor    : テクスチャの絵柄
+    //   input.color     : 粒ごとの色（寿命によるフェード込み）
+    output.color = gMaterial.color * textureColor * input.color;
 
     // αが完全に0のピクセルは書き込まない
     //   深度バッファも汚さないので、粒が後ろの粒を隠さなくなる

@@ -158,6 +158,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\2d\Sprite.cpp" />
     <ClCompile Include="Engine\3d\BlendMode.cpp" />
     <ClCompile Include="Engine\3d\Camera.cpp" />
+    <ClCompile Include="Engine\3d\Field.cpp" />
     <ClCompile Include="Engine\3d\Model.cpp" />
     <ClCompile Include="Engine\3d\ModelManager.cpp" />
     <ClCompile Include="Engine\3d\Object3dPipeline.cpp" />
@@ -173,6 +174,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\base\TextureManager.cpp" />
     <ClCompile Include="Engine\base\WinApp.cpp" />
     <ClCompile Include="Engine\components\MeshRenderer.cpp" />
+    <ClCompile Include="Engine\components\ParticleEmitter.cpp" />
     <ClCompile Include="Engine\components\Rotator.cpp" />
     <ClCompile Include="Engine\editor\DebugCamera.cpp" />
     <ClCompile Include="Engine\editor\Editor.cpp" />
@@ -271,11 +273,13 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\2d\Sprite.h" />
     <ClInclude Include="Engine\3d\BlendMode.h" />
     <ClInclude Include="Engine\3d\Camera.h" />
+    <ClInclude Include="Engine\3d\Field.h" />
     <ClInclude Include="Engine\3d\Model.h" />
     <ClInclude Include="Engine\3d\ModelData.h" />
     <ClInclude Include="Engine\3d\ModelManager.h" />
     <ClInclude Include="Engine\3d\Object3dPipeline.h" />
     <ClInclude Include="Engine\3d\Object3dStructs.h" />
+    <ClInclude Include="Engine\3d\Particle.h" />
     <ClInclude Include="Engine\3d\ParticlePipeline.h" />
     <ClInclude Include="Engine\3d\ParticleSystem.h" />
     <ClInclude Include="Engine\3d\PrimitiveDrawer.h" />
@@ -288,6 +292,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\base\TextureManager.h" />
     <ClInclude Include="Engine\base\WinApp.h" />
     <ClInclude Include="Engine\components\MeshRenderer.h" />
+    <ClInclude Include="Engine\components\ParticleEmitter.h" />
     <ClInclude Include="Engine\components\Rotator.h" />
     <ClInclude Include="Engine\editor\DebugCamera.h" />
     <ClInclude Include="Engine\editor\Editor.h" />
@@ -300,6 +305,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\math\Vector2.h" />
     <ClInclude Include="Engine\math\Vector3.h" />
     <ClInclude Include="Engine\math\Vector4.h" />
+    <ClInclude Include="Engine\scene\CameraData.h" />
     <ClInclude Include="Engine\scene\Component.h" />
     <ClInclude Include="Engine\scene\EngineContext.h" />
     <ClInclude Include="Engine\scene\GameObject.h" />

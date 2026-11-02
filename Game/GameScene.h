@@ -7,12 +7,12 @@
 #include <vector>
 #include <wrl.h>
 
+#include "CameraData.h"
 #include "EngineContext.h"
 #include "MathUtility.h"
 #include "Object3dStructs.h"   // DirectionalLight
 #include "Camera.h"
 #include "Editor.h"
-#include "ParticleSystem.h"   
 #include "GameObject.h"
 #include "Sprite.h"
 
@@ -41,7 +41,7 @@ private:
 	GameObject* CreateGameObject(const std::string& name);
 
 	/// <summary>シーンの中身を描く。描画先は呼び出し側が設定済み</summary>
-	void DrawScene(const Matrix4x4& viewProjectionMatrix);
+	void DrawScene(const CameraData& camera);
 
 	/// <summary>基準グリッドを PrimitiveDrawer に予約する</summary>
 	void DrawGrid();
@@ -80,16 +80,11 @@ private:
 
 	GameObject* sphereObject_ = nullptr;
 	GameObject* suzanneObject_ = nullptr;
-
+	GameObject* particleObject_ = nullptr;
 	// ────────────────────────────────────────────────────────────────
 	// スプライト（まだコンポーネント化していない）
 	// ────────────────────────────────────────────────────────────────
 	Sprite sprite_;
-
-	// ────────────────────────────────────────────────────────────────
-	// パーティクル
-	// ────────────────────────────────────────────────────────────────
-	ParticleSystem particleSystem_;
 
 	// ────────────────────────────────────────────────────────────────
 	// 平行光源（シーンに1つ）

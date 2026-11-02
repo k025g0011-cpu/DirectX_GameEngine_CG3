@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CameraData.h"
 #include "MathUtility.h"   // Matrix4x4
 
 // ────────────────────────────────────────────────────────────────────
@@ -42,8 +43,8 @@ public:
 	virtual void Update() {}
 
 	/// <summary>描画コマンドを積む。描画しないコンポーネントは上書き不要</summary>
-	/// <param name="viewProjectionMatrix">今のカメラのビュー×射影</param>
-	virtual void Draw(const Matrix4x4& viewProjectionMatrix) { (void)viewProjectionMatrix; }
+	/// <param name="camera">今のカメラの行列一式</param>
+	virtual void Draw(const CameraData& camera) { (void)camera; }
 
 	/// <summary>インスペクタに自分の設定項目を描く</summary>
 	virtual void DrawInspector() {}

@@ -54,7 +54,8 @@ void MeshRenderer::SetModelFromPath(const std::string& modelPath) {
 // 描画
 //   isEnabled_ の判定は GameObject::Draw が済ませているので不要
 // ════════════════════════════════════════════════════════════════════
-void MeshRenderer::Draw(const Matrix4x4& viewProjectionMatrix) {
+void MeshRenderer::Draw(const CameraData& camera) {
+
 
 	// モデルが設定されていなければ何もしない
 	if (model_ == nullptr) {
@@ -70,7 +71,7 @@ void MeshRenderer::Draw(const Matrix4x4& viewProjectionMatrix) {
 	// ────────────────────────────────────────────────────────────────
 	// ② 定数バッファに書き込む（Map 済みなのでそのまま代入できる）
 	// ────────────────────────────────────────────────────────────────
-	transformationMatrixData_->WVP = worldMatrix * viewProjectionMatrix;
+	transformationMatrixData_->WVP = worldMatrix * camera.viewProjectionMatrix;
 	transformationMatrixData_->World = worldMatrix;
 
 	// ────────────────────────────────────────────────────────────────

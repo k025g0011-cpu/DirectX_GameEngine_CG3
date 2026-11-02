@@ -28,7 +28,7 @@ public:
 	void Update();
 
 	/// <summary>描画コマンドを積む。全コンポーネントに配る</summary>
-	void Draw(const Matrix4x4& viewProjectionMatrix);
+	void Draw(const CameraData& camera);
 
 	/// <summary>インスペクタに Transform と全コンポーネントを描く</summary>
 	void DrawInspector();

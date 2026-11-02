@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "CameraData.h"
 #include "DebugCamera.h"
 #include "EditorLayout.h"
 #include "EngineContext.h"
@@ -39,6 +40,15 @@ public:
 
 	/// <summary>いま使うべきビュープロジェクション行列</summary>
 	const Matrix4x4& GetViewProjectionMatrix() const;
+
+	/// <summary>いま使うべきビュー行列（カメラの向きが要るとき用）</summary>
+	const Matrix4x4& GetViewMatrix() const;
+
+	/// <summary>いま使うべき射影行列</summary>
+	const Matrix4x4& GetProjectionMatrix() const;
+
+	/// <summary>今のカメラの行列一式。描画時はこれを配る</summary>
+	CameraData GetCameraData() const;
 
 	ViewMode GetViewMode() const { return viewMode_; }
 	bool IsViewHovered() const { return isViewHovered_; }

@@ -13,6 +13,7 @@
 
 // コンポーネントファイル
 #include "MeshRenderer.h"
+#include "ParticleEmitter.h"
 #include "Rotator.h"  
 
 #ifdef USE_IMGUI
@@ -58,26 +59,11 @@ void GameScene::Initialize(const EngineContext& context) {
 
 	// ════════════════════════════════════════
 	// パーティクル
+	//   他のオブジェクトと同じ3手順：箱を作る → 位置を決める → 機能を足す
 	// ════════════════════════════════════════
-	particleSystem_.Initialize(context_, "resources/particle.png", 128);
-
-	// 最大数ぶん、格子状に配置しておく
-	//   粒の数をスライダーで増やすと、左上から順に現れる
-	const uint32_t maxParticleCount = particleSystem_.GetMaxInstanceCount();
-
-	for (uint32_t index = 0; index < maxParticleCount; ++index) {
-		Transform& transform = particleSystem_.GetTransform(index);
-
-		transform.scale = { 0.6f, 0.6f, 0.6f };
-		transform.rotate = { 0.0f, 0.0f, 0.0f };
-		transform.translate = {
-			static_cast<float>(index % 16) * 0.7f - 5.25f,   // 横に16個
-			static_cast<float>(index / 16) * 0.7f + 2.0f,    // 縦に積む
-			0.0f,
-		};
-	}
-
-	particleSystem_.SetInstanceCount(16);   // まずは1行ぶん
+	particleObject_ = CreateGameObject("Particles");
+	particleObject_->GetTransform().translate = { 0.0f, 2.0f, 0.0f };
+	particleObject_->AddComponent<ParticleEmitter>("resources/particle.png", 128);
 
 
 	// ════════════════════════════════════════
@@ -132,9 +118,6 @@ void GameScene::Update() {
 	// ② ゲームカメラ
 	camera_.Update();
 
-	// パーティクルの行列を更新する（カメラが決まった後に呼ぶ）
-	particleSystem_.Update(editor_.GetViewProjectionMatrix());
-
 	// ════════════════════════════════════════
 	// ③ このゲーム固有のパネル
 	// ════════════════════════════════════════
@@ -176,7 +159,7 @@ void GameScene::Draw() {
 	RenderTexture& target = editor_.GetActiveRenderTexture();
 
 	target.PreDraw();
-	DrawScene(editor_.GetViewProjectionMatrix());
+	DrawScene(editor_.GetCameraData());
 	target.PostDraw();
 }
 
@@ -184,14 +167,14 @@ void GameScene::Draw() {
 // シーンの中身を描く
 //   描画先は呼び出し側が設定済み。ここでは値を変えない
 // ════════════════════════════════════════════════════════════════════
-void GameScene::DrawScene(const Matrix4x4& viewProjectionMatrix) {
+void GameScene::DrawScene(const CameraData& camera) {
 
 	ID3D12GraphicsCommandList* commandList = context_.dxCommon->GetCommandList().Get();
 
 	// ① 線の描画（自前の RootSignature / PSO に切り替わる）
 	context_.primitiveDrawer->Reset();
 	DrawGrid();
-	context_.primitiveDrawer->Draw(viewProjectionMatrix);
+	context_.primitiveDrawer->Draw(camera.viewProjectionMatrix);
 
 	// ② 3D用パイプラインに戻す
 	context_.object3dPipeline->SetPipeline();
@@ -203,11 +186,25 @@ void GameScene::DrawScene(const Matrix4x4& viewProjectionMatrix) {
 
 	// ③ 全オブジェクト
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
-		gameObject->Draw(viewProjectionMatrix);
+		gameObject->Draw(camera);
 	}
 
-	// ④ パーティクル（パイプラインが切り替わる）
-	particleSystem_.Draw();
+	// ④ パーティクル（専用パス）
+	//    パーティクルは別のパイプラインを使うので、③のループの中では描けない。
+	//    ③の途中でパイプラインを切り替えると、後続の MeshRenderer が壊れる
+	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
+
+		if (!gameObject->IsActive()) {
+			continue;
+		}
+
+		ParticleEmitter* emitter = gameObject->GetComponent<ParticleEmitter>();
+		if (emitter == nullptr || !emitter->IsEnabled()) {
+			continue;
+		}
+
+		emitter->DrawParticles(camera);
+	}
 
 	// ⑤ スプライトは Object3d のパイプラインを使うので、戻してから描く
 	context_.object3dPipeline->SetPipeline();
@@ -290,31 +287,6 @@ void GameScene::DrawSettingsPanel() {
 		ImGui::DragFloat2("SpriteUVScale", &uvTransformSprite_.scale.x, 0.01f, -10.0f, 10.0f);
 		ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite_.rotate.z);
 
-		// ───── パーティクル ─────
-		ImGui::Separator();
-		ImGui::Text("パーティクル");
-
-		// 合成方法。BlendMode の並び順と一致させること
-		static const char* kBlendNames[] = {
-			"なし", "通常", "加算", "減算", "乗算", "スクリーン",
-		};
-		static_assert(IM_ARRAYSIZE(kBlendNames) ==
-			static_cast<int>(BlendMode::kMaxCount), "kBlendNames の数が合っていません");
-
-		int blendIndex = static_cast<int>(particleSystem_.GetBlendMode());
-		if (ImGui::Combo("合成", &blendIndex, kBlendNames, IM_ARRAYSIZE(kBlendNames))) {
-			particleSystem_.SetBlendMode(static_cast<BlendMode>(blendIndex));
-		}
-
-		// 粒の数
-		int instanceCount = static_cast<int>(particleSystem_.GetInstanceCount());
-		if (ImGui::SliderInt("粒の数", &instanceCount,
-			0, static_cast<int>(particleSystem_.GetMaxInstanceCount()))) {
-			particleSystem_.SetInstanceCount(static_cast<uint32_t>(instanceCount));
-		}
-
-		// 全粒で共有する色（αを下げると薄くなる）
-		ImGui::ColorEdit4("粒の色", &particleSystem_.GetMaterialData()->color.x);
 	}
 	editor_.EndPanel();
 

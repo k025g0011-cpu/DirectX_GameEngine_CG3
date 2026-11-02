@@ -54,7 +54,7 @@ namespace {
 			}
 
 			// ─── 書き込み先は「いちばん最後に作ったマテリアル」 ───
-			//     ★ 毎回 back() を呼び直す（push_back で vector が引っ越すため）
+			//     毎回 back() を呼び直す（push_back で vector が引っ越すため）
 			MaterialData& current = materials.back();
 
 			// ─── 拡散色に使うテクスチャ ───
