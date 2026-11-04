@@ -63,7 +63,7 @@ void Model::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
 
     for (size_t i = 0; i < modelData.materials.size(); ++i) {
         const MaterialData& src = modelData.materials[i];   // 読み取り元（CPU データ）
-        MaterialResource& dst = materials_[i];              // 書き込み先（★ & 必須）
+        MaterialResource& dst = materials_[i];              // 書き込み先（& 必須）
 
         // 定数バッファ
         dst.resource = dxCommon_->CreateBufferResource(sizeof(Material));
@@ -71,6 +71,9 @@ void Model::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
         dst.data->color = src.color;             // mtl の Kd + d
         dst.data->enableLighting = true;         // 3D モデルは基本ライティングする
         dst.data->uvTransform = MakeIdentity4x4();
+        dst.data->shininess = 20.0f;   // ほどよい光沢
+        dst.data->specularColor = Vector3{ 1.0f, 1.0f, 1.0f };   // 既定は白
+        dst.data->specularModel = SpecularModel::Phong;   // 既定は従来どおり
 
         // テクスチャ
         //   mtl に map_Kd が無いモデルは白1x1で代用する（白は乗算の単位元なので Kd がそのまま出る）

@@ -111,16 +111,8 @@ void ParticleEmitter::DrawGizmos(PrimitiveDrawer& drawer) {
 	const Vector3& position = GetOwner()->GetTransform().translate;
 
 	AABB emitArea{};
-	emitArea.min = {
-		position.x - emitRange_.x,
-		position.y - emitRange_.y,
-		position.z - emitRange_.z,
-	};
-	emitArea.max = {
-		position.x + emitRange_.x,
-		position.y + emitRange_.y,
-		position.z + emitRange_.z,
-	};
+	emitArea.min = position - emitRange_;
+	emitArea.max = position + emitRange_;
 
 	DrawAABBWireframe(drawer, emitArea, kEmitAreaColor);
 
@@ -163,11 +155,14 @@ Particle ParticleEmitter::MakeParticle() {
 	particle.transform.scale = { particleScale_, particleScale_, particleScale_ };
 	particle.transform.rotate = { 0.0f, 0.0f, 0.0f };
 
-	particle.transform.translate = {
-		emitterPosition.x + distUnit(randomEngine_) * emitRange_.x,
-		emitterPosition.y + distUnit(randomEngine_) * emitRange_.y,
-		emitterPosition.z + distUnit(randomEngine_) * emitRange_.z,
+	// 軸ごとに別の乱数を引くので、先にオフセットを組み立ててから足す
+	const Vector3 offset = {
+		distUnit(randomEngine_) * emitRange_.x,
+		distUnit(randomEngine_) * emitRange_.y,
+		distUnit(randomEngine_) * emitRange_.z,
 	};
+
+	particle.transform.translate = emitterPosition + offset;
 
 	particle.velocity = {
 		distUnit(randomEngine_) * velocityRange_.x,

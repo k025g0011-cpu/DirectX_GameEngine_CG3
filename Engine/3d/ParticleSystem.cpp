@@ -76,6 +76,9 @@ void ParticleSystem::CreateMaterialResource() {
 	materialData_->color = { 1.0f, 1.0f, 1.0f, 1.0f };
 	materialData_->enableLighting = false;   // Particle.PS は見ないが、意味を揃えておく
 	materialData_->uvTransform = MakeIdentity4x4();
+	materialData_->shininess = 0.0f; // ライティングしないので使われない
+	materialData_->specularColor = Vector3{ 0.0f, 0.0f, 0.0f };   // パーティクルも光らせない
+	materialData_->specularModel = SpecularModel::Phong;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -156,9 +159,8 @@ void ParticleSystem::Update(float deltaTime) {
 		particle.currentTime += deltaTime;
 
 		// ─── 速度で動かす ───
-		particle.transform.translate.x += particle.velocity.x * deltaTime;
-		particle.transform.translate.y += particle.velocity.y * deltaTime;
-		particle.transform.translate.z += particle.velocity.z * deltaTime;
+			//   velocity は「1秒あたりの移動量」なので、経過秒数を掛ける
+		particle.transform.translate += particle.velocity * deltaTime;
 
 		// ─── 寿命が尽きたら、本当に消す ───
 		if (!particle.IsAlive()) {

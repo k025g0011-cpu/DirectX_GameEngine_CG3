@@ -36,7 +36,7 @@ void Object3dPipeline::CreateRootSignature() {
 	// ルートパラメータ（シェーダーへの引数の一覧）
 	//   ここの並び順が kRootParameterXxx の値そのもの
 	// ────────────────────────────────────────────────────────────────
-	D3D12_ROOT_PARAMETER rootParameters[4] = {};
+	D3D12_ROOT_PARAMETER rootParameters[5] = {};
 
 	// [0] Material（PS b0）
 	rootParameters[kRootParameterMaterial].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
@@ -77,6 +77,12 @@ void Object3dPipeline::CreateRootSignature() {
 	rootParameters[kRootParameterLight].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
 	rootParameters[kRootParameterLight].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // VertexShaderで使う
 	rootParameters[kRootParameterLight].Descriptor.ShaderRegister = 1;					  // レジスタ番号1とバインド
+
+
+	// [4] CameraForGPU（PS b2）… 鏡面反射で視線ベクトルを作るために使う
+	rootParameters[kRootParameterCamera].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
+	rootParameters[kRootParameterCamera].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
+	rootParameters[kRootParameterCamera].Descriptor.ShaderRegister = 2;					  // レジスタ番号2とバインド
 
 	descriptionRootSignature.pParameters = rootParameters;
 	descriptionRootSignature.NumParameters = _countof(rootParameters);

@@ -67,10 +67,7 @@ void DebugCamera::UpdateMouseControl() {
 			// 掴んだ景色が指に付いてくる感覚にするため X は符号を反転する
 			Vector3 move = { -mouseMove.x * moveSpeed_, mouseMove.y * moveSpeed_, 0.0f };
 			// ローカル方向をワールド方向へ変換（平行移動成分は無視される）
-			move = TransformNormal(move, matRot_);
-			target_.x += move.x;
-			target_.y += move.y;
-			target_.z += move.z;
+			target_ += TransformNormal(move, matRot_);
 
 		} else {
 			// ─── オービット：ターンテーブル方式 ───
@@ -109,10 +106,7 @@ void DebugCamera::UpdateKeyboardMove() {
 	if (input_->PushKey(DIK_Q)) { keyMove.y -= keySpeed_; }   // 下
 
 	// 角度は毎フレーム変わるので、移動ベクトルは毎回変換し直す（キャッシュ不可）
-	keyMove = TransformNormal(keyMove, matRot_);
-	target_.x += keyMove.x;
-	target_.y += keyMove.y;
-	target_.z += keyMove.z;
+	target_ += TransformNormal(keyMove, matRot_);
 }
 
 // ════════════════════════════════════════
@@ -124,10 +118,8 @@ void DebugCamera::UpdateMatrices() {
 
 	// ピボット回転：注視点から distance_ だけ後ろへ下がった位置がカメラの座標
 	// ローカルの {0, 0, -distance_} を現在の姿勢で回せば、自動的に円軌道になる
-	Vector3 offset = TransformNormal({ 0.0f, 0.0f, -distance_ }, matRot_);
-	translation_.x = target_.x + offset.x;
-	translation_.y = target_.y + offset.y;
-	translation_.z = target_.z + offset.z;
+	const Vector3 offset = TransformNormal({ 0.0f, 0.0f, -distance_ }, matRot_);
+	translation_ = target_ + offset;
 
 	// 座標から平行移動行列を計算する
 	Matrix4x4 translateMatrix = MakeTranslateMatrix(translation_);

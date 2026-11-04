@@ -64,7 +64,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	//   順序が重要。上から順に依存している
 	// ════════════════════════════════════════════════════════════════
 	WinApp winApp;
-	winApp.Initialize();
+	winApp.Initialize(false);     // false → 1600×900 のウィンドウ | true → ボーダレス全画面
 
 	Log(logStream, "hello DirectX");
 
@@ -167,6 +167,22 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// ───── 更新 ─────
 		gameTime.Update();
 		input.Update();
+
+		// ───── ESC で終了 ─────
+		//   全画面には×ボタンが無いので、これが唯一の終了手段になる
+		bool requestQuit = input.TriggerKey(DIK_ESCAPE);
+
+#ifdef USE_IMGUI
+		// ImGui の入力欄に文字を打っている最中は無視する
+		//   オブジェクト名を打っている途中で落ちると困る
+		if (ImGui::GetIO().WantTextInput) {
+			requestQuit = false;
+		}
+#endif
+
+		if (requestQuit) {
+			break;
+		}
 
 #ifdef USE_IMGUI
 		ImGui_ImplDX12_NewFrame();

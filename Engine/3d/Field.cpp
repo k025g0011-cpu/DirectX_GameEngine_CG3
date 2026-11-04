@@ -88,9 +88,7 @@ void Field::DrawGizmos(PrimitiveDrawer& drawer) const {
 void AccelerationField::Apply(Particle& particle, float deltaTime) const {
 
 	// 加速度は「1秒あたりの速度の変化量」なので、経過秒数を掛ける
-	particle.velocity.x += acceleration_.x * deltaTime;
-	particle.velocity.y += acceleration_.y * deltaTime;
-	particle.velocity.z += acceleration_.z * deltaTime;
+	particle.velocity += acceleration_ * deltaTime;
 }
 
 // ════════════════════════════════════════════════════════════════════

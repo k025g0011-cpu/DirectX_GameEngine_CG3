@@ -1,15 +1,12 @@
 #include "Camera.h"
 
-#include "WinApp.h"
-
 // ════════════════════════════════════════════════════════════════════
 // 初期化
 // ════════════════════════════════════════════════════════════════════
-void Camera::Initialize() {
+void Camera::Initialize(float aspectRatio) {
 
-	// アスペクト比は画面サイズから求める
-	aspectRatio_ = static_cast<float>(WinApp::kClientWidth)
-		/ static_cast<float>(WinApp::kClientHeight);
+	// アスペクト比は外から受け取る（画面サイズを知らなくてよくなる）
+	aspectRatio_ = aspectRatio;
 
 	// 既定値で行列を1回作っておく
 	//   Update を呼び忘れても単位行列のまま描画されない

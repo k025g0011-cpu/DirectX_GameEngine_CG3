@@ -85,7 +85,7 @@ LRESULT CALLBACK WinApp::WindowProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
 // ════════════════════════════════════════════════════════════════════
 // 初期化（ウィンドウクラスの登録 〜 ウィンドウの表示）
 // ════════════════════════════════════════════════════════════════════
-void WinApp::Initialize() {
+void WinApp::Initialize(bool fullscreen) {
 
 	// COM の初期化（WIC でのテクスチャ読み込みに必要）
 	CoInitializeEx(0, COINIT_MULTITHREADED);
@@ -102,22 +102,59 @@ void WinApp::Initialize() {
 	RegisterClass(&wc_);
 
 	// ────────────────────────────────────────────────────────────────
-	// ② クライアント領域からウィンドウ全体のサイズを逆算
+	// ② ウィンドウの形とサイズを決める
+	//     全画面のときだけ、モニタの解像度を実行時に調べる
 	// ────────────────────────────────────────────────────────────────
-	RECT wrc = { 0, 0, kClientWidth, kClientHeight };
-	AdjustWindowRect(&wrc, WS_OVERLAPPEDWINDOW, false);
+	DWORD   windowStyle = 0;
+	int32_t windowX = 0;
+	int32_t windowY = 0;
+	int32_t windowWidth = 0;
+	int32_t windowHeight = 0;
+
+	if (fullscreen) {
+
+		// プライマリモニタの解像度をそのままクライアント領域にする
+		clientWidth_ = GetSystemMetrics(SM_CXSCREEN);
+		clientHeight_ = GetSystemMetrics(SM_CYSCREEN);
+
+		// WS_POPUP : 枠もタイトルバーもメニューも無い、中身だけのウィンドウ
+		//   クライアント領域＝ウィンドウ全体なので AdjustWindowRect は不要
+		windowStyle = WS_POPUP | WS_VISIBLE;
+
+		windowX = 0;
+		windowY = 0;
+		windowWidth = clientWidth_;
+		windowHeight = clientHeight_;
+
+	} else {
+
+		clientWidth_ = kDefaultClientWidth;
+		clientHeight_ = kDefaultClientHeight;
+
+		windowStyle = WS_OVERLAPPEDWINDOW;
+
+		// クライアント領域からウィンドウ全体のサイズを逆算する
+		//   枠とタイトルバーのぶんだけ外側が大きくなる
+		RECT wrc = { 0, 0, clientWidth_, clientHeight_ };
+		AdjustWindowRect(&wrc, windowStyle, false);
+
+		windowX = CW_USEDEFAULT;   // 位置は OS に任せる
+		windowY = CW_USEDEFAULT;
+		windowWidth = wrc.right - wrc.left;
+		windowHeight = wrc.bottom - wrc.top;
+	}
 
 	// ────────────────────────────────────────────────────────────────
 	// ③ ウィンドウの生成
 	// ────────────────────────────────────────────────────────────────
 	hwnd_ = CreateWindow(
 		wc_.lpszClassName,      // 利用するクラス名
-		L"CG2",                 // タイトルバーの文字
-		WS_OVERLAPPEDWINDOW,    // よく見るウィンドウスタイル
-		CW_USEDEFAULT,          // 表示X座標（OS に任せる）
-		CW_USEDEFAULT,          // 表示Y座標（OS に任せる）
-		wrc.right - wrc.left,   // ウィンドウ横幅
-		wrc.bottom - wrc.top,   // ウィンドウ縦幅
+		L"CG2",                 // タイトルバーの文字（全画面では見えない）
+		windowStyle,            // ウィンドウスタイル
+		windowX,                // 表示X座標
+		windowY,                // 表示Y座標
+		windowWidth,            // ウィンドウ横幅
+		windowHeight,           // ウィンドウ縦幅
 		nullptr,                // 親ウィンドウハンドル
 		nullptr,                // メニューハンドル
 		wc_.hInstance,          // インスタンスハンドル

@@ -37,15 +37,15 @@ void Editor::Initialize(const EngineContext& context, Camera* gameCamera) {
 	// 編集用のカメラ
 	// ════════════════════════════════════════
 	debugCamera_.Initialize(context.input,
-		WinApp::kClientWidth, WinApp::kClientHeight);
+		context.winApp->GetClientWidth(), context.winApp->GetClientHeight());
 
 	// ════════════════════════════════════════
 	// ビュー用のオフスクリーン（編集用とゲーム用で2枚）
 	//   クリア色を変えておくと、どちらを見ているか一目で分かる
 	// ════════════════════════════════════════
 	RenderTexture::Desc desc{};
-	desc.width = WinApp::kClientWidth;
-	desc.height = WinApp::kClientHeight;
+	desc.width = context.winApp->GetClientWidth();
+	desc.height = context.winApp->GetClientHeight();
 	desc.useDepth = true;
 
 	desc.clearColor = { 0.15f, 0.15f, 0.18f, 1.0f };   // 編集：暗いグレー
@@ -129,6 +129,11 @@ CameraData Editor::GetCameraData() const {
 	camera.viewMatrix = GetViewMatrix();
 	camera.projectionMatrix = GetProjectionMatrix();
 	camera.viewProjectionMatrix = GetViewProjectionMatrix();
+
+	// カメラの位置。鏡面反射で「どこから見ているか」に使う
+	camera.worldPosition = (viewMode_ == ViewMode::Edit)
+		? debugCamera_.GetTranslation()
+		: gameCamera_->GetTranslate();
 
 	return camera;
 }

@@ -31,6 +31,7 @@ void MeshRenderer::Initialize() {
 	// 最初のフレームで不定にならないよう単位行列を入れておく
 	transformationMatrixData_->WVP = MakeIdentity4x4();
 	transformationMatrixData_->World = MakeIdentity4x4();
+	transformationMatrixData_->WorldInverseTranspose = MakeIdentity4x4();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -73,7 +74,8 @@ void MeshRenderer::Draw(const CameraData& camera) {
 	// ────────────────────────────────────────────────────────────────
 	transformationMatrixData_->WVP = worldMatrix * camera.viewProjectionMatrix;
 	transformationMatrixData_->World = worldMatrix;
-
+	//   法線用。非均等スケールでも法線が正しい向きを保つ
+	transformationMatrixData_->WorldInverseTranspose = Transpose(Inverse(worldMatrix));
 	// ────────────────────────────────────────────────────────────────
 	// ③ Model に「この行列で描いて」と頼む
 	//    頂点・マテリアル・テクスチャの設定は Model 側がやる
@@ -129,7 +131,26 @@ void MeshRenderer::DrawInspector() {
 	//    ここを変えると「同じモデルを使っている全オブジェクト」に反映される
 	for (uint32_t i = 0; i < model_->GetMaterialCount(); ++i) {
 		ImGui::PushID(static_cast<int>(i));
-		ImGui::ColorEdit4("color", &model_->GetMaterialData(i)->color.x);
+
+		Material* material = model_->GetMaterialData(i);
+
+		ImGui::ColorEdit4("color", &material->color.x);
+		ImGui::DragFloat("光沢度", &material->shininess, 0.5f, 0.0f, 200.0f, "%.1f");
+		//   ImGui は C のライブラリなので int* しか受け取れない
+		//     enum class ⇔ int の変換は、この境界だけで行う
+		int32_t model = static_cast<int32_t>(material->specularModel);
+		if (ImGui::Combo("鏡面反射モデル", &model, "Phong\0Blinn-Phong\0")) {
+			material->specularModel = static_cast<SpecularModel>(model);
+		}
+		//   ハイライトの色。白＝非金属、色付き＝金属 など
+		ImGui::ColorEdit3("鏡面反射色", &material->specularColor.x);
+
+		// ライティングの ON/OFF（int32_t なので bool を経由する）
+		bool enableLighting = (material->enableLighting != 0);
+		if (ImGui::Checkbox("ライティング", &enableLighting)) {
+			material->enableLighting = enableLighting ? 1 : 0;
+		}
+
 		ImGui::PopID();
 	}
 

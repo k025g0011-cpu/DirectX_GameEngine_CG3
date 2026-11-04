@@ -23,12 +23,13 @@ class TextureManager;
 class Sprite {
 public:
 	/// <summary>初期化</summary>
-	/// <param name="dxCommon">DirectX基盤（所有しない）</param>
-	/// <param name="textureManager">テクスチャ管理（所有しない）</param>
-	/// <param name="textureSrvIndex">TextureManager::Load が返した番号</param>
-	/// <param name="size">表示するピクセルサイズ</param>
+	/// <param name="dxCommon">DirectX の基盤</param>
+	/// <param name="textureManager">テクスチャの管理者</param>
+	/// <param name="textureSrvIndex">貼るテクスチャの SRV 番号</param>
+	/// <param name="size">スプライトの大きさ（ピクセル）</param>
+	/// <param name="screenSize">画面の大きさ（ピクセル）。平行投影行列に使う</param>
 	void Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
-		uint32_t textureSrvIndex, const Vector2& size);
+		uint32_t textureSrvIndex, const Vector2& size, const Vector2& screenSize);
 
 	/// <summary>描画する。頂点と行列の更新も中で行う</summary>
 	void Draw();

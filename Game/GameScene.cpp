@@ -32,7 +32,7 @@ void GameScene::Initialize(const EngineContext& context) {
 	// カメラとエディタ
 	//   エディタはゲームカメラを知る必要がある（ゲームタブで使うため）
 	// ════════════════════════════════════════
-	camera_.Initialize();
+	camera_.Initialize(context_.winApp->GetAspectRatio());
 	editor_.Initialize(context_, &camera_);
 
 	// ════════════════════════════════════════
@@ -73,7 +73,7 @@ void GameScene::Initialize(const EngineContext& context) {
 		context_.textureManager->Load("resources/uvChecker.png");
 
 	sprite_.Initialize(context_.dxCommon, context_.textureManager,
-		uvCheckerTextureIndex, { 640.0f, 360.0f });
+		uvCheckerTextureIndex, { 640.0f, 360.0f }, context_.winApp->GetClientSize());
 
 	// ════════════════════════════════════════
 	// 平行光源（シーンに1つ。モデルとスプライトで共通）
@@ -86,6 +86,15 @@ void GameScene::Initialize(const EngineContext& context) {
 	directionalLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };  // 白
 	directionalLightData_->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // 真上から下へ
 	directionalLightData_->intensity = 1.0f;
+
+	// ════════════════════════════════════════
+	// カメラの位置（鏡面反射用。シーンに1つ）
+	//   中身は毎フレーム DrawScene で書き換える
+	// ════════════════════════════════════════
+	cameraResource_ = context_.dxCommon->CreateBufferResource(sizeof(CameraForGPU));
+	cameraResource_->Map(0, nullptr, reinterpret_cast<void**>(&cameraData_));
+
+	cameraData_->worldPosition = Vector3{ 0.0f, 0.0f, 0.0f };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -169,8 +178,6 @@ void GameScene::Draw() {
 // ════════════════════════════════════════════════════════════════════
 void GameScene::DrawScene(const CameraData& camera) {
 
-	ID3D12GraphicsCommandList* commandList = context_.dxCommon->GetCommandList().Get();
-
 	// ① 線の描画（自前の RootSignature / PSO に切り替わる）
 	//    Reset → 積む → Draw の順。Draw より後に積んでも間に合わない
 	context_.primitiveDrawer->Reset();
@@ -185,11 +192,8 @@ void GameScene::DrawScene(const CameraData& camera) {
 
 	// ② 3D用パイプラインに戻す
 	context_.object3dPipeline->SetPipeline();
-
-	// 平行光源はシーン共通なので、描画の最初に1回設定すればよい
-	commandList->SetGraphicsRootConstantBufferView(
-		Object3dPipeline::kRootParameterLight,
-		directionalLightResource_->GetGPUVirtualAddress());
+	// シーン共通の定数（ライト・カメラ）をルートに設定する（PS b1 / PS b2 ｜　パイプラインをセットするたびにこの設定を行う）
+	SetSceneConstants(camera);
 
 	// ③ 全オブジェクト
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
@@ -215,6 +219,7 @@ void GameScene::DrawScene(const CameraData& camera) {
 
 	// ⑤ スプライトは Object3d のパイプラインを使うので、戻してから描く
 	context_.object3dPipeline->SetPipeline();
+	SetSceneConstants(camera);
 
 	// ⑥ スプライト
 	sprite_.Draw();
@@ -242,6 +247,27 @@ void GameScene::DrawGrid() {
 	}
 
 	drawer.DrawLine3d({ 0.0f, 0.0f, 0.0f }, { 0.0f, half, 0.0f }, kGreen);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// シーン共通の定数をルートに設定する
+//   ルートシグネチャを設定し直すと、それまでの引数は全部無効になる
+//     SetPipeline() を呼ぶたびに、この関数も呼び直す必要がある
+// ════════════════════════════════════════════════════════════════════
+void GameScene::SetSceneConstants(const CameraData& camera) {
+
+	ID3D12GraphicsCommandList* commandList = context_.dxCommon->GetCommandList().Get();
+
+	// カメラの位置を GPU へ送る（鏡面反射の視線計算に使う）
+	cameraData_->worldPosition = camera.worldPosition;
+
+	commandList->SetGraphicsRootConstantBufferView(
+		Object3dPipeline::kRootParameterLight,
+		directionalLightResource_->GetGPUVirtualAddress());
+
+	commandList->SetGraphicsRootConstantBufferView(
+		Object3dPipeline::kRootParameterCamera,
+		cameraResource_->GetGPUVirtualAddress());
 }
 
 // ════════════════════════════════════════════════════════════════════

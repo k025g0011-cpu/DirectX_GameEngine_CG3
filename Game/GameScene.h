@@ -46,6 +46,10 @@ private:
 	/// <summary>基準グリッドを PrimitiveDrawer に予約する</summary>
 	void DrawGrid();
 
+	/// <summary>シーン共通の定数（ライト・カメラ）をルートに設定する</summary>
+	///   ルートシグネチャを設定し直すと引数が無効になるので、そのたびに呼ぶ
+	void SetSceneConstants(const CameraData& camera);
+
 	/// <summary>全オブジェクトのデバッグ線を PrimitiveDrawer に予約する</summary>
 	void DrawGizmos();
 
@@ -94,6 +98,12 @@ private:
 	// ────────────────────────────────────────────────────────────────
 	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource_;
 	DirectionalLight* directionalLightData_ = nullptr;
+
+	// ────────────────────────────────────────────────────────────────
+	// カメラの位置（鏡面反射用。シーンに1つ）
+	// ────────────────────────────────────────────────────────────────
+	Microsoft::WRL::ComPtr<ID3D12Resource> cameraResource_;
+	CameraForGPU* cameraData_ = nullptr;
 
 	// ────────────────────────────────────────────────────────────────
 	// ImGui で操作する値

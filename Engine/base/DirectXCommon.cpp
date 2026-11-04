@@ -254,8 +254,8 @@ void DirectXCommon::InitializeSwapChain() {
 	HRESULT hr{};
 
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc{};
-	swapChainDesc.Width = WinApp::kClientWidth;   // 画面の幅
-	swapChainDesc.Height = WinApp::kClientHeight;  // 画面の高さ
+	swapChainDesc.Width = winApp_->GetClientWidth();    // 画面の幅
+	swapChainDesc.Height = winApp_->GetClientHeight();   // 画面の高さ
 	swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;  // 色の形式
 	swapChainDesc.SampleDesc.Count = 1;                 // マルチサンプルしない
 	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;  // 描画先として使う
@@ -337,8 +337,8 @@ void DirectXCommon::InitializeDepthStencilView() {
 	// ① 深度バッファ本体（リソース）を作る
 	// ────────────────────────────────────────────────────────────────
 	D3D12_RESOURCE_DESC resourceDesc{};
-	resourceDesc.Width = WinApp::kClientWidth;   // 画面と同じ幅
-	resourceDesc.Height = WinApp::kClientHeight;  // 画面と同じ高さ
+	resourceDesc.Width = winApp_->GetClientWidth();    // 画面と同じ幅
+	resourceDesc.Height = winApp_->GetClientHeight();   // 画面と同じ高さ
 	resourceDesc.MipLevels = 1;                      // ミップマップは不要
 	resourceDesc.DepthOrArraySize = 1;                      // 奥行き1
 	resourceDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;  // 深度24bit + ステンシル8bit
@@ -424,8 +424,8 @@ void DirectXCommon::InitializeDxcCompiler() {
 void DirectXCommon::InitializeViewport() {
 	// ビューポート
 	//   クライアント領域のサイズと同じにして画面全体に表示
-	viewport_.Width = static_cast<FLOAT>(WinApp::kClientWidth);
-	viewport_.Height = static_cast<FLOAT>(WinApp::kClientHeight);
+	viewport_.Width = static_cast<FLOAT>(winApp_->GetClientWidth());
+	viewport_.Height = static_cast<FLOAT>(winApp_->GetClientHeight());
 	viewport_.TopLeftX = 0.0f;
 	viewport_.TopLeftY = 0.0f;
 	viewport_.MinDepth = 0.0f;
@@ -434,9 +434,9 @@ void DirectXCommon::InitializeViewport() {
 	// シザー矩形
 	//   基本的にビューポートと同じ矩形が構成されるようにする
 	scissorRect_.left = 0;
-	scissorRect_.right = WinApp::kClientWidth;
+	scissorRect_.right = winApp_->GetClientWidth();
 	scissorRect_.top = 0;
-	scissorRect_.bottom = WinApp::kClientHeight;
+	scissorRect_.bottom = winApp_->GetClientHeight();
 }
 
 // ════════════════════════════════════════════════════════════════════

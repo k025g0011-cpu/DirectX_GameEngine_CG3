@@ -5,13 +5,12 @@
 #include "DirectXCommon.h"
 #include "TextureManager.h"
 #include "Object3dPipeline.h"
-#include "WinApp.h"
 
 // ════════════════════════════════════════════════════════════════════
 // 初期化
 // ════════════════════════════════════════════════════════════════════
 void Sprite::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
-	uint32_t textureSrvIndex, const Vector2& size) {
+	uint32_t textureSrvIndex, const Vector2& size, const Vector2& screenSize) {
 
 	assert(dxCommon != nullptr);
 	assert(textureManager != nullptr);
@@ -61,7 +60,7 @@ void Sprite::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
 		reinterpret_cast<void**>(&transformationMatrixData_));
 	transformationMatrixData_->WVP = MakeIdentity4x4();
 	transformationMatrixData_->World = MakeIdentity4x4();
-
+	transformationMatrixData_->WorldInverseTranspose = MakeIdentity4x4();
 	// ════════════════════════════════════════
 	// マテリアルの定数バッファ（PS b0）
 	//   スプライトはライティングしない（画面に貼る絵なので法線に意味がない）
@@ -71,17 +70,20 @@ void Sprite::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
 	materialData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };   // 白（＝テクスチャそのまま）
 	materialData_->enableLighting = false;
 	materialData_->uvTransform = MakeIdentity4x4();
+	materialData_->shininess = 0.0f; // ライティングしないので使われない
+	materialData_->specularColor = Vector3{ 0.0f, 0.0f, 0.0f };   // スプライトは光らせない
+	materialData_->specularModel = SpecularModel::Phong;
 
 	// ════════════════════════════════════════
 	// 平行投影行列
-	//   画面の左上を (0,0)、右下を (1280,720) とするピクセル座標系を作る
-	//   画面サイズが変わらないので1回だけ作る
+	//   画面の左上を (0,0)、右下を (画面幅, 画面高さ) とするピクセル座標系を作る
+	//   画面サイズは起動時に決まって変わらないので、ここで1回だけ作る
 	// ════════════════════════════════════════
 	projectionMatrix_ = MakeOrthographicMatrix(
-		0.0f, 0.0f,                                 // 左, 上
-		static_cast<float>(WinApp::kClientWidth),   // 右
-		static_cast<float>(WinApp::kClientHeight),  // 下
-		0.0f, 100.0f);                              // near, far
+		0.0f, 0.0f,         // 左, 上
+		screenSize.x,       // 右
+		screenSize.y,       // 下
+		0.0f, 100.0f);      // near, far
 }
 
 // ════════════════════════════════════════════════════════════════════

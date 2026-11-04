@@ -12,7 +12,8 @@
 class Camera {
 public:
 	/// <summary>初期化。既定値で行列を1回作る</summary>
-	void Initialize();
+	/// <param name="aspectRatio">画面の横÷縦</param>
+	void Initialize(float aspectRatio);
 
 	/// <summary>行列を作り直す。値を変えたあと、描画前に呼ぶ</summary>
 	void Update();

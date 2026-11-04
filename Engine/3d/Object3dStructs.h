@@ -2,6 +2,13 @@
 #include <cstdint>
 #include "MathUtility.h"  
 
+// 鏡面反射の計算方式
+//   GPU に int として渡るので、基底型を明示して 4 バイトに固定する
+enum class SpecularModel : int32_t {
+    Phong = 0,   // reflect で反射ベクトルを作る。古典的
+    BlinnPhong = 1,   // ハーフベクトルを使う。PBR につながる現代的な方式
+};
+
 // ================================================================
 // Object3d シェーダーとやり取りする構造体
 //   モデルもスプライトも、この形でデータを渡す
@@ -16,20 +23,31 @@ struct VertexData {	  // 全体＜32＞バイト
 };
 
 
-// PS の b0（96B）
+// PS の b0（112B）
 // オブジェクトごとに持つマテリアル情報
-struct Material {			// 全体＜96＞バイト
-    Vector4 color;			// マテリアル色　(float<4> * 4) = 16バイト
-    int32_t enableLighting; // 有効or無効					　　 ４バイト
-    float padding[3];		// hlsl側の自動空白に合わせる　　　 12バイト
-    Matrix4x4 uvTransform;  // UV座標　　　　　　　　　　　　　　64バイト
+struct Material {			        // 全体＜112＞バイト
+    Vector4 color;			        // マテリアル色　(float<4> * 4) = 16バイト
+    int32_t enableLighting;         // 有効or無効					　　 ４バイト
+    SpecularModel specularModel;    // 鏡面反射の計算方式			　　 ４バイト
+    float padding[2];		        // hlsl側の自動空白に合わせる　　　 12バイト
+    Matrix4x4 uvTransform;          // UV座標　　　　　　　　　　　　　　64バイト
+    float shininess;                // 光沢度。大きいほど狭く鋭く光る　　 ４バイト
+    Vector3 specularColor;          // 鏡面反射色                    12 バイト
 };
 
 // VS の b0（128B）
 // 座標変換用の行列（VSに渡す定数）
-struct TransformationMatrix { // 全体＜128＞バイト
-    Matrix4x4 WVP;    // クリップ空間へ変換する行列
-    Matrix4x4 World;  // ワールド空間へ変換する行列（法線の変換に使う）
+struct TransformationMatrix { // 全体＜192＞バイト
+    Matrix4x4 WVP;    // クリップ空間へ変換する行列                   64 バイト (オフセット  0)
+    Matrix4x4 World;  // ワールド空間へ変換する行列（法線の変換に使う）   64 バイト (オフセット 64)
+    Matrix4x4 WorldInverseTranspose;  // 法線専用の変換行列           64 バイト (オフセット128)
+};
+
+// PS の b2（16B）
+// カメラの情報。鏡面反射で「どこから見ているか」を知るために使う
+struct CameraForGPU {   // 全体＜16＞バイト
+    Vector3 worldPosition;  // カメラのワールド座標　(float<3> * 3) = 12バイト
+    float padding;          // 16バイト境界に揃える　　　　　　　　 ４バイト
 };
 
 

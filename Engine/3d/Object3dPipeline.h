@@ -32,6 +32,7 @@ public:
 	static constexpr uint32_t kRootParameterTransform = 1;   // VS b0  TransformationMatrix
 	static constexpr uint32_t kRootParameterTexture = 2;   // PS t0  Texture（テーブル）
 	static constexpr uint32_t kRootParameterLight = 3;   // PS b1  DirectionalLight
+	static constexpr uint32_t kRootParameterCamera = 4;   // PS b2  CameraForGPU
 
 	/// <summary>RootSignature とすべての PSO を作る</summary>
 	void Initialize(DirectXCommon* dxCommon);

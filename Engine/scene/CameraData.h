@@ -14,4 +14,5 @@ struct CameraData {
 	Matrix4x4 viewMatrix{};             // 世界をカメラ基準に直す
 	Matrix4x4 projectionMatrix{};       // 3Dを画面に潰す
 	Matrix4x4 viewProjectionMatrix{};   // 上2つを合成したもの（使用頻度が高いので持つ）
+	Vector3   worldPosition{};          // カメラの位置。鏡面反射の視線計算に使う
 };
