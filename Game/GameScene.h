@@ -106,6 +106,12 @@ private:
 	CameraForGPU* cameraData_ = nullptr;
 
 	// ────────────────────────────────────────────────────────────────
+	// 点光源
+	// ────────────────────────────────────────────────────────────────
+	Microsoft::WRL::ComPtr<ID3D12Resource> pointLightResource_;
+	PointLight* pointLightData_ = nullptr;
+
+	// ────────────────────────────────────────────────────────────────
 	// ImGui で操作する値
 	// ────────────────────────────────────────────────────────────────
 	Transform uvTransformModel_{

@@ -76,7 +76,7 @@ void GameScene::Initialize(const EngineContext& context) {
 		uvCheckerTextureIndex, { 640.0f, 360.0f }, context_.winApp->GetClientSize());
 
 	// ════════════════════════════════════════
-	// 平行光源（シーンに1つ。モデルとスプライトで共通）
+	// 平行光源の定数バッファ（シーンに1つ。モデルとスプライトで共通）
 	// ════════════════════════════════════════
 	directionalLightResource_ =
 		context_.dxCommon->CreateBufferResource(sizeof(DirectionalLight));
@@ -88,13 +88,25 @@ void GameScene::Initialize(const EngineContext& context) {
 	directionalLightData_->intensity = 1.0f;
 
 	// ════════════════════════════════════════
-	// カメラの位置（鏡面反射用。シーンに1つ）
+	// カメラの位置の定数バッファ（鏡面反射用。シーンに1つ）
 	//   中身は毎フレーム DrawScene で書き換える
 	// ════════════════════════════════════════
 	cameraResource_ = context_.dxCommon->CreateBufferResource(sizeof(CameraForGPU));
 	cameraResource_->Map(0, nullptr, reinterpret_cast<void**>(&cameraData_));
 
 	cameraData_->worldPosition = Vector3{ 0.0f, 0.0f, 0.0f };
+
+	
+	// ════════════════════════════════════════
+	// 点光源の定数バッファ
+ 	// ════════════════════════════════════════
+	pointLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(PointLight));
+	pointLightResource_->Map(0, nullptr, reinterpret_cast<void**>(&pointLightData_));
+	pointLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
+	pointLightData_->position = Vector3{ 0.0f, 2.0f, 0.0f };
+	pointLightData_->intensity = 1.0f;
+	pointLightData_->radius = 10.0f;
+	pointLightData_->decay = 1.0f;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -261,13 +273,20 @@ void GameScene::SetSceneConstants(const CameraData& camera) {
 	// カメラの位置を GPU へ送る（鏡面反射の視線計算に使う）
 	cameraData_->worldPosition = camera.worldPosition;
 
+	// ＜平行光源の定数バッファ＞アドレスをルート番号にセット
 	commandList->SetGraphicsRootConstantBufferView(
 		Object3dPipeline::kRootParameterLight,
 		directionalLightResource_->GetGPUVirtualAddress());
 
+	// ＜カメラの位置（world座標）の定数バッファ＞アドレスをルート番号にセット　（ 主に鏡面反射用 ）
 	commandList->SetGraphicsRootConstantBufferView(
 		Object3dPipeline::kRootParameterCamera,
 		cameraResource_->GetGPUVirtualAddress());
+
+	// ＜点光源の定数バッファ＞アドレスをルート番号にセット
+	commandList->SetGraphicsRootConstantBufferView(
+		Object3dPipeline::kRootParameterPointLight,
+		pointLightResource_->GetGPUVirtualAddress());
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -282,6 +301,28 @@ void GameScene::DrawGizmos() {
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
 		gameObject->DrawGizmos(drawer);
 	}
+
+// 点光源のギズモ -----------------------------------------------------------------
+
+	//   点光源の位置を十字で表示し、影響半径を線で示す
+	const Vector3& p = pointLightData_->position;
+	const float r = pointLightData_->radius;
+	const Vector4 lightColor{ 1.0f, 1.0f, 0.4f, 1.0f };
+
+	//   位置を示す小さな十字（3軸）
+	constexpr float kCrossSize = 0.3f;
+	drawer.DrawLine3d({ p.x - kCrossSize, p.y, p.z }, { p.x + kCrossSize, p.y, p.z }, lightColor);
+	drawer.DrawLine3d({ p.x, p.y - kCrossSize, p.z }, { p.x, p.y + kCrossSize, p.z }, lightColor);
+	drawer.DrawLine3d({ p.x, p.y, p.z - kCrossSize }, { p.x, p.y, p.z + kCrossSize }, lightColor);
+
+	//   影響半径を示す線（4方向）
+	const Vector4 radiusColor{ 1.0f, 1.0f, 0.4f, 0.3f };
+	drawer.DrawLine3d(p, { p.x + r, p.y, p.z }, radiusColor);
+	drawer.DrawLine3d(p, { p.x - r, p.y, p.z }, radiusColor);
+	drawer.DrawLine3d(p, { p.x, p.y, p.z + r }, radiusColor);
+	drawer.DrawLine3d(p, { p.x, p.y, p.z - r }, radiusColor);
+//--------------------------------------------------------------------------------
+
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -315,6 +356,15 @@ void GameScene::DrawSettingsPanel() {
 		ImGui::DragFloat("light intensity", &directionalLightData_->intensity, 0.01f);
 		ImGui::ColorEdit4("light color", &directionalLightData_->color.x);
 		directionalLightData_->direction = Normalize(directionalLightData_->direction);
+		ImGui::Separator();
+
+		if (ImGui::CollapsingHeader("PointLight")) {
+			ImGui::ColorEdit4("color##point", &pointLightData_->color.x);
+			ImGui::DragFloat3("position##point", &pointLightData_->position.x, 0.05f);
+			ImGui::DragFloat("intensity##point", &pointLightData_->intensity, 0.01f, 0.0f, 10.0f);
+			ImGui::DragFloat("radius##point", &pointLightData_->radius, 0.1f, 0.0f, 100.0f);
+			ImGui::DragFloat("decay##point", &pointLightData_->decay, 0.01f, 0.0f, 10.0f);
+		}
 		ImGui::Separator();
 
 		// ───── スプライト ─────

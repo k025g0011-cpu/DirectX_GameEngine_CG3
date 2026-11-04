@@ -17,6 +17,15 @@ struct DirectionalLight
     float intensity;
 };
 
+struct PointLight
+{
+    float32_t4 color;
+    float32_t3 position;
+    float intensity;
+    float radius;
+    float decay;
+};
+
 struct Camera
 {
     float32_t3 worldPosition;
@@ -25,6 +34,7 @@ struct Camera
 ConstantBuffer<Material> gMaterial : register(b0);
 ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
 ConstantBuffer<Camera> gCamera : register(b2);
+ConstantBuffer<PointLight> gPointLight : register(b3);
 Texture2D<float32_t4> gTexture : register(t0); // SRVのregisterはt
 SamplerState gSampler : register(s0); // Samplerのregisterはs
 
@@ -33,79 +43,97 @@ struct PixelShaderOutput
     float32_t4 color : SV_TARGET0;
 };
 
+//   ライティング計算に必要な「面そのもの」の情報
+//     ライトが何個あっても変わらない値をまとめておく
+struct SurfaceInfo
+{
+    float32_t3 normal; // 正規化済みの法線
+    float32_t3 toEye; // ピクセル → カメラ の向き
+    float32_t3 baseColor; // マテリアル色 × テクスチャ色
+};
+
+//   光源1つぶんの寄与を計算する
+//     surface        : 面の情報
+//     lightDirection : 光が「進む」向き（正規化済み）
+//     lightColor     : 光の色
+//     intensity      : 明るさ（点光源なら距離減衰を掛けたもの）
+//   gMaterial はグローバルなので引数に渡さなくても読める
+float32_t3 ComputeLighting(
+    SurfaceInfo surface,
+    float32_t3 lightDirection,
+    float32_t3 lightColor,
+    float intensity)
+{
+    //   拡散反射（ハーフランバート）
+    float NdotL = dot(surface.normal, -lightDirection);
+    float cos = pow(NdotL * 0.5f + 0.5f, 2.0f);
+    float32_t3 diffuse = surface.baseColor * lightColor * cos * intensity;
+
+    //   鏡面反射。方式はマテリアルが決める（一様な分岐なので if でよい）
+    float specularPower;
+    if (gMaterial.specularModel == 0)
+    {
+        //   Phong
+        float32_t3 reflectLight = reflect(lightDirection, surface.normal);
+        specularPower = pow(saturate(dot(reflectLight, surface.toEye)), gMaterial.shininess);
+    }
+    else
+    {
+        //   Blinn-Phong
+        float32_t3 halfVector = normalize(-lightDirection + surface.toEye);
+        specularPower = pow(saturate(dot(surface.normal, halfVector)), gMaterial.shininess);
+    }
+
+    //   光が当たっていない面では、つやも出さない
+    float lightMask = step(0.0f, NdotL);
+    float32_t3 specular = lightColor * intensity * specularPower * lightMask * gMaterial.specularColor;
+
+    return diffuse + specular;
+}
+
 PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
+    
     float4 transformedUV = mul(float32_t4(input.texcoord, 0.0f, 1.0f), gMaterial.uvTransform); // XとY座標だけ取り出す
     float32_t4 textureColor = gTexture.Sample(gSampler, transformedUV.xy); // Textureをどのように（Sampler）、**どの部分を（texcoord）**読むか
+    
     if (gMaterial.enableLighting != 0)
-    { // Lightingする場合
-        
-        // ───── 下準備：必要なベクトルをすべて正規化して用意する ─────
-        float32_t3 normal = normalize(input.normal);
-        
-        // 光の進む向き（ライトから面へ）
-        float32_t3 lightDirection = normalize(gDirectionalLight.direction);
-        
-        // 面からカメラへ向かう向き
-        float32_t3 toEye = normalize(gCamera.worldPosition - input.worldPosition);
+    {
+        //   面の情報を1回だけ作る。ライトが何個あっても使い回せる
+        SurfaceInfo surface;
+        surface.normal    = normalize(input.normal);
+        surface.toEye     = normalize(gCamera.worldPosition - input.worldPosition);
+        surface.baseColor = gMaterial.color.rgb * textureColor.rgb;
 
-        // ───── 拡散反射（Half Lambert）─────
-        //   ざらざらした面の明るさ。どの角度から見ても同じ
-        float NdotL = dot(normal, -lightDirection);
-        float cos = pow(NdotL * 0.5f + 0.5f, 2.0f);
-        
-        float32_t3 diffuse = gMaterial.color.rgb * textureColor.rgb
-                           * gDirectionalLight.color.rgb * cos * gDirectionalLight.intensity;
+        //   ① 平行光源
+        float32_t3 lighting = ComputeLighting(
+            surface,
+            normalize(gDirectionalLight.direction),
+            gDirectionalLight.color.rgb,
+            gDirectionalLight.intensity);
 
-        // ───── 鏡面反射（Phong）─────
-        //   光が鏡のように跳ね返った向きと、視線の向きが揃うほど強く光る
-        float32_t3 reflectLight = reflect(lightDirection, normal);
-        float RdotE = dot(reflectLight, toEye);
-        
-        //   鏡面反射の強さ。計算方式はマテリアルが決める
-        //     この分岐の条件は定数バッファから来るので、
-        //     1回の描画の中では全ピクセルが同じ道を通る（＝一様な分岐。重くない）
-        float specularPower;
-        if (gMaterial.specularModel == 0)
-        {
-            //   Phong：反射ベクトルと視線を比べる
-            //     「跳ね返った光が、どれだけ目のほうを向いているか」
-            float32_t3 reflectLight = reflect(lightDirection, normal);
-            float RdotE = dot(reflectLight, toEye);
-            specularPower = pow(saturate(RdotE), gMaterial.shininess);
-        }
-        else
-        {
-            //   Blinn-Phong：ハーフベクトルと法線を比べる
-            //     「この面が、光を目へ跳ね返す理想の向きに、どれだけ近いか」
-            //     -lightDirection は「光源へ向かう向き」。toEye は「目へ向かう向き」
-            float32_t3 halfVector = normalize(-lightDirection + toEye);
-            float NdotH = dot(normal, halfVector);
-            specularPower = pow(saturate(NdotH), gMaterial.shininess);
-        }
-        
-        
-        //   光が当たっていない面（NdotL <= 0）では、つやも出さない
-        //     これが無いと、裏側にハイライトだけが浮かぶ
-        float lightMask = step(0.0f, NdotL);
-        
-        //   ハイライトの色はマテリアルが決める
-        //     非金属 → 白（1,1,1）。光源の色がそのまま出る
-        //     金属   → その金属の色（金なら 1.0, 0.76, 0.33 など）
-        float32_t3 specular = gDirectionalLight.color.rgb * gDirectionalLight.intensity
-                            * specularPower * lightMask * gMaterial.specularColor;
+        //   ② 点光源
+        //     光の向きは「光源 → ピクセル」。ピクセルごとに違う
+        float32_t3 pointLightDirection = normalize(input.worldPosition - gPointLight.position);
+        //     距離による減衰。radius で 0 になり、decay がカーブの鋭さ
+        float distance = length(gPointLight.position - input.worldPosition);
+        float factor = pow(saturate(-distance / gPointLight.radius + 1.0f), gPointLight.decay);
 
-        // ───── 合成 ─────
-        //   拡散と鏡面は「足す」。掛けるのではない
-        output.color.rgb = diffuse + specular;
-        
-        // α値はライティングの影響を受けない。マテリアルとテクスチャだけで決まる
-        output.color.a = gMaterial.color.a * textureColor.a;
+        lighting += ComputeLighting(
+            surface,
+            pointLightDirection,
+            gPointLight.color.rgb,
+            gPointLight.intensity * factor);   // ★減衰を intensity に掛け込む
+
+        output.color.rgb = lighting;
+        output.color.a   = gMaterial.color.a * textureColor.a;
     }
     else
     { // Lightingしない場合
         output.color = gMaterial.color * textureColor;
     }
+    
+    
     return output;
 }

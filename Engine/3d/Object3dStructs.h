@@ -58,3 +58,13 @@ struct DirectionalLight {// 全体＜32＞バイト
     Vector3 direction;   // ライトの向き　(float<3> * 3) = 12バイト
     float intensity;     // 輝度							４バイト
 };
+
+// 点光源
+struct PointLight {
+    Vector4 color;       // 16 (オフセット  0)  光の色
+    Vector3 position;    // 12 (オフセット 16)  ワールド座標
+    float intensity;     //  4 (オフセット 28)  明るさ
+    float radius;        //  4 (オフセット 32)  影響半径。これより遠いと真っ暗
+    float decay;         //  4 (オフセット 36)  減衰の鋭さ
+    float padding[2];    //  8 (オフセット 40)
+};                       // 48 バイト

@@ -36,7 +36,7 @@ void Object3dPipeline::CreateRootSignature() {
 	// ルートパラメータ（シェーダーへの引数の一覧）
 	//   ここの並び順が kRootParameterXxx の値そのもの
 	// ────────────────────────────────────────────────────────────────
-	D3D12_ROOT_PARAMETER rootParameters[5] = {};
+	D3D12_ROOT_PARAMETER rootParameters[6] = {};
 
 	// [0] Material（PS b0）
 	rootParameters[kRootParameterMaterial].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
@@ -83,6 +83,11 @@ void Object3dPipeline::CreateRootSignature() {
 	rootParameters[kRootParameterCamera].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
 	rootParameters[kRootParameterCamera].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
 	rootParameters[kRootParameterCamera].Descriptor.ShaderRegister = 2;					  // レジスタ番号2とバインド
+
+	// [5] PointLight（PS b3）… 点光源の情報を渡す
+	rootParameters[kRootParameterPointLight].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
+	rootParameters[kRootParameterPointLight].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
+	rootParameters[kRootParameterPointLight].Descriptor.ShaderRegister = 3;					  // レジスタ番号3とバインド
 
 	descriptionRootSignature.pParameters = rootParameters;
 	descriptionRootSignature.NumParameters = _countof(rootParameters);
