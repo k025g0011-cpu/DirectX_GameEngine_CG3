@@ -36,7 +36,7 @@ void Object3dPipeline::CreateRootSignature() {
 	// ルートパラメータ（シェーダーへの引数の一覧）
 	//   ここの並び順が kRootParameterXxx の値そのもの
 	// ────────────────────────────────────────────────────────────────
-	D3D12_ROOT_PARAMETER rootParameters[6] = {};
+	D3D12_ROOT_PARAMETER rootParameters[7] = {};
 
 	// [0] Material（PS b0）
 	rootParameters[kRootParameterMaterial].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
@@ -73,7 +73,7 @@ void Object3dPipeline::CreateRootSignature() {
 	rootParameters[kRootParameterTexture].DescriptorTable.pDescriptorRanges = descriptorRange;
 	rootParameters[kRootParameterTexture].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
 
-	// [3] DirectionalLight（PS b1）
+	// [3] DirectionalLight（PS b1）… 平行光源の情報を渡す
 	rootParameters[kRootParameterLight].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
 	rootParameters[kRootParameterLight].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // VertexShaderで使う
 	rootParameters[kRootParameterLight].Descriptor.ShaderRegister = 1;					  // レジスタ番号1とバインド
@@ -88,6 +88,11 @@ void Object3dPipeline::CreateRootSignature() {
 	rootParameters[kRootParameterPointLight].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
 	rootParameters[kRootParameterPointLight].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
 	rootParameters[kRootParameterPointLight].Descriptor.ShaderRegister = 3;					  // レジスタ番号3とバインド
+
+	// [6] SpotLight （PS b4）… スポットライトの情報を渡す
+	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	// CBVを使う
+	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
+	rootParameters[6].Descriptor.ShaderRegister = 4;					// レジスタ番号4とバインド
 
 	descriptionRootSignature.pParameters = rootParameters;
 	descriptionRootSignature.NumParameters = _countof(rootParameters);

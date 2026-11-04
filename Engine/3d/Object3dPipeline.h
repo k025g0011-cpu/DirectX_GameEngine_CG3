@@ -28,12 +28,13 @@ public:
 	// ルートパラメータ番号
 	//   RootSignature を作っているのがこのクラスなので、番号もここが公開する
 	// ────────────────────────────────────────────────────────────────
-	static constexpr uint32_t kRootParameterMaterial = 0;   // PS b0  Material
-	static constexpr uint32_t kRootParameterTransform = 1;   // VS b0  TransformationMatrix
-	static constexpr uint32_t kRootParameterTexture = 2;   // PS t0  Texture（テーブル）
-	static constexpr uint32_t kRootParameterLight = 3;   // PS b1  DirectionalLight
-	static constexpr uint32_t kRootParameterCamera = 4;   // PS b2  CameraForGPU
+	static constexpr uint32_t kRootParameterMaterial = 0;     // PS b0  Material
+	static constexpr uint32_t kRootParameterTransform = 1;    // VS b0  TransformationMatrix
+	static constexpr uint32_t kRootParameterTexture = 2;      // PS t0  Texture（テーブル）
+	static constexpr uint32_t kRootParameterLight = 3;		  // PS b1  DirectionalLight
+	static constexpr uint32_t kRootParameterCamera = 4;		  // PS b2  CameraForGPU
 	static constexpr uint32_t kRootParameterPointLight = 5;   // PS b3  PointLight
+	static constexpr uint32_t kRootParameterSpotLight = 6;    // PS b4  SpotLight
 
 	/// <summary>RootSignature とすべての PSO を作る</summary>
 	void Initialize(DirectXCommon* dxCommon);

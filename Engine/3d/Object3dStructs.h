@@ -68,3 +68,16 @@ struct PointLight {
     float decay;         //  4 (オフセット 36)  減衰の鋭さ
     float padding[2];    //  8 (オフセット 40)
 };                       // 48 バイト
+
+// スポットライト
+struct SpotLight {
+    Vector4 color;           // 16 (オフセット  0)  光の色
+    Vector3 position;        // 12 (オフセット 16)  ワールド座標
+    float intensity;         //  4 (オフセット 28)  明るさ
+    Vector3 direction;       // 12 (オフセット 32)  円錐の軸（光が進む向き）
+    float distance;          //  4 (オフセット 44)  届く距離
+    float decay;             //  4 (オフセット 48)  距離の減衰の鋭さ
+    float cosAngle;          //  4 (オフセット 52)  円錐の縁の cos（ここで 0 になる）
+    float cosFalloffStart;   //  4 (オフセット 56)  減衰が始まる角度の cos
+    float padding;           //  4 (オフセット 60)
+};                           // 64

@@ -64,7 +64,7 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	//   順序が重要。上から順に依存している
 	// ════════════════════════════════════════════════════════════════
 	WinApp winApp;
-	winApp.Initialize(false);     // false → 1600×900 のウィンドウ | true → ボーダレス全画面
+	winApp.Initialize(true);     // false → 1600×900 のウィンドウ | true → ボーダレス全画面
 
 	Log(logStream, "hello DirectX");
 

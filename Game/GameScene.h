@@ -112,6 +112,11 @@ private:
 	PointLight* pointLightData_ = nullptr;
 
 	// ────────────────────────────────────────────────────────────────
+	// スポットライト
+	// ────────────────────────────────────────────────────────────────
+	Microsoft::WRL::ComPtr<ID3D12Resource> spotLightResource_;
+	SpotLight* spotLightData_ = nullptr;
+	// ────────────────────────────────────────────────────────────────
 	// ImGui で操作する値
 	// ────────────────────────────────────────────────────────────────
 	Transform uvTransformModel_{

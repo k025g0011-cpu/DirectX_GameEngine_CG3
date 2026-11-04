@@ -26,6 +26,18 @@ struct PointLight
     float decay;
 };
 
+struct SpotLight
+{
+    float32_t4 color;
+    float32_t3 position;
+    float intensity;
+    float32_t3 direction;
+    float distance;
+    float decay;
+    float cosAngle;
+    float cosFalloffStart;
+};
+
 struct Camera
 {
     float32_t3 worldPosition;
@@ -35,6 +47,7 @@ ConstantBuffer<Material> gMaterial : register(b0);
 ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
 ConstantBuffer<Camera> gCamera : register(b2);
 ConstantBuffer<PointLight> gPointLight : register(b3);
+ConstantBuffer<SpotLight> gSpotLight : register(b4);
 Texture2D<float32_t4> gTexture : register(t0); // SRVのregisterはt
 SamplerState gSampler : register(s0); // Samplerのregisterはs
 
@@ -124,10 +137,33 @@ PixelShaderOutput main(VertexShaderOutput input)
             surface,
             pointLightDirection,
             gPointLight.color.rgb,
-            gPointLight.intensity * factor);   // ★減衰を intensity に掛け込む
+            gPointLight.intensity * factor);   // 減衰を intensity に掛け込む
+
+        //   ③ スポットライト
+        //     光の向きは点光源と同じく「光源 → ピクセル」
+        float32_t3 spotLightDirection = normalize(input.worldPosition - gSpotLight.position);
+
+        //     （1）距離による減衰。点光源とまったく同じ式
+        float spotDistance = length(gSpotLight.position - input.worldPosition);
+        float attenuationFactor = pow(saturate(-spotDistance / gSpotLight.distance + 1.0f), gSpotLight.decay);
+
+        //     （2）角度による減衰。円錐の軸からどれだけズレているか
+        //       内積がそのまま cos を返す。cos は角度と逆向きに動く（中心ほど大きい）
+        float cosAngle = dot(spotLightDirection, normalize(gSpotLight.direction));
+         //       減衰の幅。0 や負になると「0で割る」「明暗が反転する」事故になるので下限で守る
+        //         cosFalloffStart <= cosAngle のときは、ぼかし無しの固い円錐として扱う
+        float falloffRange = max(gSpotLight.cosFalloffStart - gSpotLight.cosAngle, 0.0001f);
+        //       cosAngle（縁）で 0、cosFalloffStart（減衰開始）で 1 になるように正規化
+        float falloffFactor = saturate((cosAngle - gSpotLight.cosAngle) / falloffRange);
+
+        lighting += ComputeLighting(
+            surface,
+            spotLightDirection,
+            gSpotLight.color.rgb,
+            gSpotLight.intensity * attenuationFactor * falloffFactor); // 減衰を2つ掛ける
 
         output.color.rgb = lighting;
-        output.color.a   = gMaterial.color.a * textureColor.a;
+        output.color.a = gMaterial.color.a * textureColor.a;
     }
     else
     { // Lightingしない場合
