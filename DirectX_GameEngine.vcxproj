@@ -173,6 +173,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\base\RenderTexture.cpp" />
     <ClCompile Include="Engine\base\TextureManager.cpp" />
     <ClCompile Include="Engine\base\WinApp.cpp" />
+    <ClCompile Include="Engine\components\LightComponent.cpp" />
     <ClCompile Include="Engine\components\MeshRenderer.cpp" />
     <ClCompile Include="Engine\components\ParticleEmitter.cpp" />
     <ClCompile Include="Engine\components\Rotator.cpp" />
@@ -291,6 +292,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\base\RenderTexture.h" />
     <ClInclude Include="Engine\base\TextureManager.h" />
     <ClInclude Include="Engine\base\WinApp.h" />
+    <ClInclude Include="Engine\components\LightComponent.h" />
     <ClInclude Include="Engine\components\MeshRenderer.h" />
     <ClInclude Include="Engine\components\ParticleEmitter.h" />
     <ClInclude Include="Engine\components\Rotator.h" />

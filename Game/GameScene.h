@@ -50,6 +50,9 @@ private:
 	///   ルートシグネチャを設定し直すと引数が無効になるので、そのたびに呼ぶ
 	void SetSceneConstants(const CameraData& camera);
 
+	/// <summary>シーン内のライトを集めて定数バッファに詰める</summary>
+	void CollectLights();
+
 	/// <summary>全オブジェクトのデバッグ線を PrimitiveDrawer に予約する</summary>
 	void DrawGizmos();
 

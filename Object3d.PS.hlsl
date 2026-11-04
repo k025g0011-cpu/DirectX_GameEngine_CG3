@@ -104,6 +104,15 @@ float32_t3 ComputeLighting(
     return diffuse + specular;
 }
 
+//   長さ 0 のベクトルを normalize すると NaN になる
+//     NaN は足し算で全体に伝染し、画面が真っ黒になる
+//     壊れた入力でも、壊れた出力にしない
+float32_t3 SafeNormalize(float32_t3 v, float32_t3 fallback)
+{
+    float lengthSquared = dot(v, v);
+    return (lengthSquared > 1e-12f) ? (v * rsqrt(lengthSquared)) : fallback;
+}
+
 PixelShaderOutput main(VertexShaderOutput input)
 {
     PixelShaderOutput output;
@@ -119,10 +128,10 @@ PixelShaderOutput main(VertexShaderOutput input)
         surface.toEye     = normalize(gCamera.worldPosition - input.worldPosition);
         surface.baseColor = gMaterial.color.rgb * textureColor.rgb;
 
-        //   ① 平行光源
+          //   ① 平行光源
         float32_t3 lighting = ComputeLighting(
             surface,
-            normalize(gDirectionalLight.direction),
+            SafeNormalize(gDirectionalLight.direction, float32_t3(0.0f, -1.0f, 0.0f)),
             gDirectionalLight.color.rgb,
             gDirectionalLight.intensity);
 
@@ -149,7 +158,8 @@ PixelShaderOutput main(VertexShaderOutput input)
 
         //     （2）角度による減衰。円錐の軸からどれだけズレているか
         //       内積がそのまま cos を返す。cos は角度と逆向きに動く（中心ほど大きい）
-        float cosAngle = dot(spotLightDirection, normalize(gSpotLight.direction));
+        float cosAngle = dot(spotLightDirection,
+            SafeNormalize(gSpotLight.direction, float32_t3(0.0f, -1.0f, 0.0f)));
          //       減衰の幅。0 や負になると「0で割る」「明暗が反転する」事故になるので下限で守る
         //         cosFalloffStart <= cosAngle のときは、ぼかし無しの固い円錐として扱う
         float falloffRange = max(gSpotLight.cosFalloffStart - gSpotLight.cosAngle, 0.0001f);

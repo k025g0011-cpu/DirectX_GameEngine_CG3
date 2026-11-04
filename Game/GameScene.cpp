@@ -12,9 +12,10 @@
 #include "WinApp.h"
 
 // コンポーネントファイル
+#include "LightComponent.h"
 #include "MeshRenderer.h"
 #include "ParticleEmitter.h"
-#include "Rotator.h"  
+#include "Rotator.h"
 
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -83,10 +84,6 @@ void GameScene::Initialize(const EngineContext& context) {
 	directionalLightResource_->Map(0, nullptr,
 		reinterpret_cast<void**>(&directionalLightData_));
 
-	directionalLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };  // 白
-	directionalLightData_->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // 真上から下へ
-	directionalLightData_->intensity = 1.0f;
-
 	// ════════════════════════════════════════
 	// カメラの位置の定数バッファ（鏡面反射用。シーンに1つ）
 	//   中身は毎フレーム DrawScene で書き換える
@@ -102,11 +99,6 @@ void GameScene::Initialize(const EngineContext& context) {
  	// ════════════════════════════════════════
 	pointLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(PointLight));
 	pointLightResource_->Map(0, nullptr, reinterpret_cast<void**>(&pointLightData_));
-	pointLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
-	pointLightData_->position = Vector3{ 0.0f, 2.0f, 0.0f };
-	pointLightData_->intensity = 1.0f;
-	pointLightData_->radius = 10.0f;
-	pointLightData_->decay = 1.0f;
 
 
 	// ════════════════════════════════════════
@@ -114,14 +106,28 @@ void GameScene::Initialize(const EngineContext& context) {
 	// ════════════════════════════════════════
 	spotLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(SpotLight));
 	spotLightResource_->Map(0, nullptr, reinterpret_cast<void**>(&spotLightData_));
-	spotLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
-	spotLightData_->position = Vector3{ 2.0f, 1.25f, 0.0f };
-	spotLightData_->intensity = 4.0f;
-	spotLightData_->direction = Normalize(Vector3{ -1.0f, -1.0f, 0.0f });
-	spotLightData_->distance = 7.0f;
-	spotLightData_->decay = 2.0f;
-	spotLightData_->cosAngle = std::cos(kPi / 3.0f);   // 60度で完全に消える
-	spotLightData_->cosFalloffStart = std::cos(kPi / 6.0f);   // 30度から暗くなり始める
+
+	// ════════════════════════════════════════
+	// ライトを「オブジェクト」として置く
+	//   他のオブジェクトと同じ3手順：箱を作る → 位置と向きを決める → 機能を足す
+	// ════════════════════════════════════════
+
+	//   太陽（真上から下へ）。+Z を下に向けるので X 軸まわりに 90度
+	GameObject* sunObject = CreateGameObject("Sun");
+	sunObject->GetTransform().translate = { 0.0f, 5.0f, 0.0f };
+	sunObject->GetTransform().rotate = { kPi / 2.0f, 0.0f, 0.0f };
+	sunObject->AddComponent<DirectionalLightComponent>();
+
+	//   点光源
+	GameObject* lampObject = CreateGameObject("Lamp");
+	lampObject->GetTransform().translate = { 0.0f, 2.0f, 0.0f };
+	lampObject->AddComponent<PointLightComponent>();
+
+	//   スポットライト。真下を向かせると床に円が落ちて見やすい
+	GameObject* spotObject = CreateGameObject("Spot");
+	spotObject->GetTransform().translate = { 0.0f, 4.0f, 0.0f };
+	spotObject->GetTransform().rotate = { kPi / 2.0f, 0.0f, 0.0f };
+	spotObject->AddComponent<SpotLightComponent>();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -164,11 +170,18 @@ void GameScene::Update() {
 	editor_.DrawObjectPanels(gameObjects_);
 
 	// ════════════════════════════════════════
-	// ⑥ 全オブジェクトの更新
+	// ⑥-a 全オブジェクトの更新
 	// ════════════════════════════════════════
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
 		gameObject->Update();
 	}
+
+
+	// ════════════════════════════════════════
+	// ⑥-b ライトを集めて定数バッファに詰める
+	//      オブジェクトの更新が終わった後でないと、位置が1フレーム古くなる
+	// ════════════════════════════════════════
+	CollectLights();
 
 	// ════════════════════════════════════════
 	// ⑦ UVTransform を反映する
@@ -310,6 +323,64 @@ void GameScene::SetSceneConstants(const CameraData& camera) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// シーン内のライトを集めて定数バッファに詰める
+//   シェーダのスロットは種類ごとに1つなので、見つかった最後の1つを使う
+//   1つも無ければ intensity = 0 で消灯する
+// ════════════════════════════════════════════════════════════════════
+void GameScene::CollectLights() {
+
+	// ───── 既定値（ライトが置かれていないときは消灯）─────
+	//   「使われない値」でも、計算に通る安全な値にすること
+	//     ゼロベクトルは normalize で NaN になり、NaN は加算で全体に伝染する
+	*directionalLightData_ = DirectionalLight{};
+	directionalLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
+	directionalLightData_->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // ゼロベクトル禁止
+	directionalLightData_->intensity = 0.0f;
+
+	*pointLightData_ = PointLight{};
+	pointLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
+	pointLightData_->position = Vector3{ 0.0f, 0.0f, 0.0f };
+	pointLightData_->intensity = 0.0f;
+	pointLightData_->radius = 1.0f;   // 0 だと -distance / 0 になる
+	pointLightData_->decay = 1.0f;   // 0 だと pow(x, 0) = 1 で減衰しない
+
+	*spotLightData_ = SpotLight{};
+	spotLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
+	spotLightData_->position = Vector3{ 0.0f, 0.0f, 0.0f };
+	spotLightData_->intensity = 0.0f;
+	spotLightData_->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // ゼロベクトル禁止
+	spotLightData_->distance = 1.0f;   // 0 だと -distance / 0 になる
+	spotLightData_->decay = 1.0f;
+	spotLightData_->cosAngle = 1.0f;   // 円錐が閉じている＝どこにも当たらない
+	spotLightData_->cosFalloffStart = 1.0f;
+
+
+	// ───── 全オブジェクトを走査する ─────
+	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
+
+		if (!gameObject->IsActive()) {
+			continue;
+		}
+
+		DirectionalLightComponent* directional =
+			gameObject->GetComponent<DirectionalLightComponent>();
+		if (directional != nullptr && directional->IsEnabled()) {
+			*directionalLightData_ = directional->MakeGpuData();
+		}
+
+		PointLightComponent* point = gameObject->GetComponent<PointLightComponent>();
+		if (point != nullptr && point->IsEnabled()) {
+			*pointLightData_ = point->MakeGpuData();
+		}
+
+		SpotLightComponent* spot = gameObject->GetComponent<SpotLightComponent>();
+		if (spot != nullptr && spot->IsEnabled()) {
+			*spotLightData_ = spot->MakeGpuData();
+		}
+	}
+}
+
+// ════════════════════════════════════════════════════════════════════
 // デバッグ用の線を集める
 //   PrimitiveDrawer は線を溜めるだけなので、ここで呼んでも
 //   パイプラインは切り替わらない（Draw は呼び出し側が1回だけ行う）
@@ -320,63 +391,6 @@ void GameScene::DrawGizmos() {
 
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
 		gameObject->DrawGizmos(drawer);
-	}
-
-// 点光源のギズモ -----------------------------------------------------------------
-
-	//   点光源の位置を十字で表示し、影響半径を線で示す
-	const Vector3& p = pointLightData_->position;
-	const float r = pointLightData_->radius;
-	const Vector4 lightColor{ 1.0f, 1.0f, 0.4f, 1.0f };
-
-	//   位置を示す小さな十字（3軸）
-	constexpr float kCrossSize = 0.3f;
-	drawer.DrawLine3d({ p.x - kCrossSize, p.y, p.z }, { p.x + kCrossSize, p.y, p.z }, lightColor);
-	drawer.DrawLine3d({ p.x, p.y - kCrossSize, p.z }, { p.x, p.y + kCrossSize, p.z }, lightColor);
-	drawer.DrawLine3d({ p.x, p.y, p.z - kCrossSize }, { p.x, p.y, p.z + kCrossSize }, lightColor);
-
-	//   影響半径を示す線（4方向）
-	const Vector4 radiusColor{ 1.0f, 1.0f, 0.4f, 0.3f };
-	drawer.DrawLine3d(p, { p.x + r, p.y, p.z }, radiusColor);
-	drawer.DrawLine3d(p, { p.x - r, p.y, p.z }, radiusColor);
-	drawer.DrawLine3d(p, { p.x, p.y, p.z + r }, radiusColor);
-	drawer.DrawLine3d(p, { p.x, p.y, p.z - r }, radiusColor);
-//--------------------------------------------------------------------------------
-
-		//   スポットライトの円錐を線で表示する
-	{
-		const Vector3& origin = spotLightData_->position;
-		const Vector3 axis = Normalize(spotLightData_->direction);
-		const float len = spotLightData_->distance;
-		//   円錐の底面の半径 ＝ 距離 × tan(角度)
-		const float angle = std::acos(spotLightData_->cosAngle);
-		const float radius = len * std::tan(angle);
-		const Vector3 center = origin + axis * len;
-		const Vector4 color{ 0.4f, 0.9f, 1.0f, 1.0f };
-
-		//   軸に垂直な2本の基準ベクトルを作る
-		//     axis とほぼ平行なベクトルを選ぶと外積が 0 になるので、Y軸かX軸を選び分ける
-		const Vector3 helper = (std::abs(axis.y) > 0.99f) ? Vector3{ 1,0,0 } : Vector3{ 0,1,0 };
-		const Vector3 right = Normalize(Cross(helper, axis));
-		const Vector3 up = Cross(axis, right);
-
-		//   軸そのもの
-		drawer.DrawLine3d(origin, center, color);
-
-		//   底面の円と、光源から円周への稜線
-		constexpr uint32_t kSegmentCount = 24;
-		Vector3 prev{};
-		for (uint32_t i = 0; i <= kSegmentCount; ++i) {
-			const float t = static_cast<float>(i) / kSegmentCount * 2.0f * kPi;
-			const Vector3 point = center + (right * std::cos(t) + up * std::sin(t)) * radius;
-			if (i > 0) {
-				drawer.DrawLine3d(prev, point, color);   // 円周
-			}
-			if (i % 6 == 0) {
-				drawer.DrawLine3d(origin, point, color); // 稜線（4本）
-			}
-			prev = point;
-		}
 	}
 }
 
@@ -406,52 +420,6 @@ void GameScene::DrawSettingsPanel() {
 		ImGui::SliderAngle("ModelUVRotate", &uvTransformModel_.rotate.z);
 		ImGui::Separator();
 
-		// ───── ライト ─────
-		ImGui::DragFloat3("light direction", &directionalLightData_->direction.x, 0.01f);
-		ImGui::DragFloat("light intensity", &directionalLightData_->intensity, 0.01f);
-		ImGui::ColorEdit4("light color", &directionalLightData_->color.x);
-		directionalLightData_->direction = Normalize(directionalLightData_->direction);
-		ImGui::Separator();
-
-		if (ImGui::CollapsingHeader("PointLight")) {
-			ImGui::ColorEdit4("color##point", &pointLightData_->color.x);
-			ImGui::DragFloat3("position##point", &pointLightData_->position.x, 0.05f);
-			ImGui::DragFloat("intensity##point", &pointLightData_->intensity, 0.01f, 0.0f, 10.0f);
-			ImGui::DragFloat("radius##point", &pointLightData_->radius, 0.1f, 0.0f, 100.0f);
-			ImGui::DragFloat("decay##point", &pointLightData_->decay, 0.01f, 0.0f, 10.0f);
-		}
-		ImGui::Separator();
-
-		if (ImGui::CollapsingHeader("SpotLight")) {
-			ImGui::ColorEdit4("color##spot", &spotLightData_->color.x);
-			ImGui::DragFloat3("position##spot", &spotLightData_->position.x, 0.05f);
-			ImGui::DragFloat3("direction##spot", &spotLightData_->direction.x, 0.01f);
-			ImGui::DragFloat("intensity##spot", &spotLightData_->intensity, 0.05f, 0.0f, 20.0f);
-			ImGui::DragFloat("distance##spot", &spotLightData_->distance, 0.1f, 0.0f, 100.0f);
-			ImGui::DragFloat("decay##spot", &spotLightData_->decay, 0.01f, 0.0f, 10.0f);
-
-			//   定数バッファには cos を入れるが、UI では「度」で見せる
-			//     GPU に都合のいい形と、人間に都合のいい形を、この境界で変換する
-			//	   2つの値は「減衰開始 <= 角度」という関係を必ず保つ必要がある
-			//     どちらを動かしても、この関係が崩れないように両方を見る
-			float angleDeg = std::acos(spotLightData_->cosAngle) * 180.0f / kPi;
-			float falloffDeg = std::acos(spotLightData_->cosFalloffStart) * 180.0f / kPi;
-
-			if (ImGui::DragFloat("角度(度)##spot", &angleDeg, 0.5f, 1.0f, 90.0f)) {
-				spotLightData_->cosAngle = std::cos(angleDeg * kPi / 180.0f);
-
-				// 円錐を狭めたとき、減衰開始が外に取り残されないよう一緒に縮める
-				if (falloffDeg > angleDeg) {
-					falloffDeg = angleDeg;
-					spotLightData_->cosFalloffStart = std::cos(falloffDeg * kPi / 180.0f);
-				}
-			}
-
-			if (ImGui::DragFloat("減衰開始(度)##spot", &falloffDeg, 0.5f, 0.0f, angleDeg)) {
-				spotLightData_->cosFalloffStart = std::cos(falloffDeg * kPi / 180.0f);
-			}
-		}
-		ImGui::Separator();
 
 		// ───── スプライト ─────
 		Vector2 spritePosition = sprite_.GetPosition();
