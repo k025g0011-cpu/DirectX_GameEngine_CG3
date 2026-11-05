@@ -36,17 +36,17 @@ void Object3dPipeline::CreateRootSignature() {
 	// ルートパラメータ（シェーダーへの引数の一覧）
 	//   ここの並び順が kRootParameterXxx の値そのもの
 	// ────────────────────────────────────────────────────────────────
-	D3D12_ROOT_PARAMETER rootParameters[7] = {};
+	D3D12_ROOT_PARAMETER rootParameters[8] = {};
 
 	// [0] Material（PS b0）
 	rootParameters[kRootParameterMaterial].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
 	rootParameters[kRootParameterMaterial].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;  // PixelShaderで使う
-	rootParameters[kRootParameterMaterial].Descriptor.ShaderRegister = 0;					  // レジスタ番号0とバインド
+	rootParameters[kRootParameterMaterial].Descriptor.ShaderRegister = 0;					  // レジスタ番号b0とバインド
 
 	// [1] TransformationMatrix（VS b0）
 	rootParameters[kRootParameterTransform].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;		// CBVを使う
 	rootParameters[kRootParameterTransform].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;	// VertexShaderで使う
-	rootParameters[kRootParameterTransform].Descriptor.ShaderRegister = 0;						// レジスタ番号0とバインド
+	rootParameters[kRootParameterTransform].Descriptor.ShaderRegister = 0;						// レジスタ番号b0とバインド
 
 	// [2] Texture（PS t0）… テクスチャはディスクリプタテーブル経由
 	//   1回の描画で複数のテクスチャを読みたくなったら、この配列の要素が増える
@@ -73,26 +73,34 @@ void Object3dPipeline::CreateRootSignature() {
 	rootParameters[kRootParameterTexture].DescriptorTable.pDescriptorRanges = descriptorRange;
 	rootParameters[kRootParameterTexture].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
 
-	// [3] DirectionalLight（PS b1）… 平行光源の情報を渡す
-	rootParameters[kRootParameterLight].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
-	rootParameters[kRootParameterLight].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // VertexShaderで使う
-	rootParameters[kRootParameterLight].Descriptor.ShaderRegister = 1;					  // レジスタ番号1とバインド
-
+	// [3] LightCount（PS b1）… 各ライトが何個入っているか
+	rootParameters[kRootParameterLightCount].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;		// CBVを使う
+	rootParameters[kRootParameterLightCount].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;	// PixelShaderで使う
+	rootParameters[kRootParameterLightCount].Descriptor.ShaderRegister = 1;						// レジスタ番号b1とバインド
 
 	// [4] CameraForGPU（PS b2）… 鏡面反射で視線ベクトルを作るために使う
-	rootParameters[kRootParameterCamera].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
-	rootParameters[kRootParameterCamera].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
-	rootParameters[kRootParameterCamera].Descriptor.ShaderRegister = 2;					  // レジスタ番号2とバインド
+	rootParameters[kRootParameterCamera].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;		// CBVを使う
+	rootParameters[kRootParameterCamera].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;	// PixelShaderで使う
+	rootParameters[kRootParameterCamera].Descriptor.ShaderRegister = 2;						// レジスタ番号b2とバインド
+		
+	// ────────────────────────────────────────────────────────────────
+	// [5][6][7] 各ライトの配列（PS t1 / t2 / t3）
+	//   StructuredBuffer は SRV。ただしテクスチャと違いディスクリプタテーブルは不要で、
+	//   アドレスを直接渡す「ルートディスクリプタ」で済む
+	//     テクスチャ → 画像の形（幅・高さ・フォーマット）の説明が要る → テーブル
+	//     バッファ   → 構造体の大きさはシェーダが知っている → アドレスだけでよい
+	// ────────────────────────────────────────────────────────────────
+	rootParameters[kRootParameterDirectionalLights].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;		// SRVを使う
+	rootParameters[kRootParameterDirectionalLights].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;	// PixelShaderで使う
+	rootParameters[kRootParameterDirectionalLights].Descriptor.ShaderRegister = 1;						// レジスタ番号t1とバインド
 
-	// [5] PointLight（PS b3）… 点光源の情報を渡す
-	rootParameters[kRootParameterPointLight].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	  // CBVを使う
-	rootParameters[kRootParameterPointLight].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
-	rootParameters[kRootParameterPointLight].Descriptor.ShaderRegister = 3;					  // レジスタ番号3とバインド
+	rootParameters[kRootParameterPointLights].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;	// SRVを使う
+	rootParameters[kRootParameterPointLights].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;	// PixelShaderで使う
+	rootParameters[kRootParameterPointLights].Descriptor.ShaderRegister = 2;					// レジスタ番号t2とバインド
 
-	// [6] SpotLight （PS b4）… スポットライトの情報を渡す
-	rootParameters[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;	// CBVを使う
-	rootParameters[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL; // PixelShaderで使う
-	rootParameters[6].Descriptor.ShaderRegister = 4;					// レジスタ番号4とバインド
+	rootParameters[kRootParameterSpotLights].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;		// SRVを使う	
+	rootParameters[kRootParameterSpotLights].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;	// PixelShaderで使う
+	rootParameters[kRootParameterSpotLights].Descriptor.ShaderRegister = 3;						// レジスタ番号t3とバインド
 
 	descriptionRootSignature.pParameters = rootParameters;
 	descriptionRootSignature.NumParameters = _countof(rootParameters);

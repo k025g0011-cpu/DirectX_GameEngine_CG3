@@ -97,16 +97,23 @@ private:
 	Sprite sprite_;
 
 	// ────────────────────────────────────────────────────────────────
-	// 平行光源（シーンに1つ）
-	// ────────────────────────────────────────────────────────────────
-	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource_;
-	DirectionalLight* directionalLightData_ = nullptr;
-
-	// ────────────────────────────────────────────────────────────────
 	// カメラの位置（鏡面反射用。シーンに1つ）
 	// ────────────────────────────────────────────────────────────────
 	Microsoft::WRL::ComPtr<ID3D12Resource> cameraResource_;
 	CameraForGPU* cameraData_ = nullptr;
+
+
+	// ────────────────────────────────────────────────────────────────
+	// ライトの個数（毎フレーム CollectLights が書き換える）
+	// ────────────────────────────────────────────────────────────────
+	Microsoft::WRL::ComPtr<ID3D12Resource> lightCountResource_;
+	LightCount* lightCountData_ = nullptr;
+
+	// ────────────────────────────────────────────────────────────────
+	// 平行光源（シーンに1つ）
+	// ────────────────────────────────────────────────────────────────
+	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource_;
+	DirectionalLight* directionalLightData_ = nullptr;
 
 	// ────────────────────────────────────────────────────────────────
 	// 点光源

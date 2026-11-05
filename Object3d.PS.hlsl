@@ -1,5 +1,6 @@
 #include "object3d.hlsli"
 
+//   マテリアルの情報をまとめておく構造体
 struct Material
 {
     float32_t4 color;
@@ -10,6 +11,7 @@ struct Material
     float32_t3 specularColor;   // 鏡面反射色
 };
 
+//   平行光源は「色 + 向き」で表す
 struct DirectionalLight
 {
     float32_t4 color;
@@ -17,6 +19,7 @@ struct DirectionalLight
     float intensity;
 };
 
+//   点光源は「位置 + 距離減衰」で表す
 struct PointLight
 {
     float32_t4 color;
@@ -24,8 +27,10 @@ struct PointLight
     float intensity;
     float radius;
     float decay;
+    float32_t2 padding;
 };
 
+//   スポットライトは「点光源 + 円錐の向きと角度」で表す
 struct SpotLight
 {
     float32_t4 color;
@@ -36,20 +41,31 @@ struct SpotLight
     float decay;
     float cosAngle;
     float cosFalloffStart;
+    float padding; 
 };
+
+//   ライトの数をまとめておく構造体
+struct LightCount
+{
+    uint directionalCount;
+    uint pointCount;
+    uint spotCount;
+};
+
 
 struct Camera
 {
     float32_t3 worldPosition;
 };
 
-ConstantBuffer<Material> gMaterial : register(b0);
-ConstantBuffer<DirectionalLight> gDirectionalLight : register(b1);
+ConstantBuffer<Material> gMaterial : register(b0); // CBVのregisterは <b>
+ConstantBuffer<LightCount> gLightCount : register(b1); 
 ConstantBuffer<Camera> gCamera : register(b2);
-ConstantBuffer<PointLight> gPointLight : register(b3);
-ConstantBuffer<SpotLight> gSpotLight : register(b4);
-Texture2D<float32_t4> gTexture : register(t0); // SRVのregisterはt
-SamplerState gSampler : register(s0); // Samplerのregisterはs
+Texture2D<float32_t4> gTexture : register(t0); // SRVのregisterは <t>
+StructuredBuffer<DirectionalLight> gDirectionalLights : register(t1);
+StructuredBuffer<PointLight> gPointLights : register(t2);
+StructuredBuffer<SpotLight> gSpotLights : register(t3);
+SamplerState gSampler : register(s0); // Samplerのregisterは <s>
 
 struct PixelShaderOutput
 {
@@ -128,49 +144,56 @@ PixelShaderOutput main(VertexShaderOutput input)
         surface.toEye     = normalize(gCamera.worldPosition - input.worldPosition);
         surface.baseColor = gMaterial.color.rgb * textureColor.rgb;
 
-          //   ① 平行光源
-        float32_t3 lighting = ComputeLighting(
-            surface,
-            SafeNormalize(gDirectionalLight.direction, float32_t3(0.0f, -1.0f, 0.0f)),
-            gDirectionalLight.color.rgb,
-            gDirectionalLight.intensity);
+        //   寄与を足し込んでいくので、0 から始める
+        float32_t3 lighting = float32_t3(0.0f, 0.0f, 0.0f);
+
+        //   ① 平行光源（入っている数だけ繰り返す）
+        for (uint d = 0; d < gLightCount.directionalCount; ++d)
+        {
+            DirectionalLight light = gDirectionalLights[d];
+            lighting += ComputeLighting(
+                surface,
+                SafeNormalize(light.direction, float32_t3(0.0f, -1.0f, 0.0f)),
+                light.color.rgb,
+                light.intensity);
+        }
 
         //   ② 点光源
-        //     光の向きは「光源 → ピクセル」。ピクセルごとに違う
-        float32_t3 pointLightDirection = normalize(input.worldPosition - gPointLight.position);
-        //     距離による減衰。radius で 0 になり、decay がカーブの鋭さ
-        float distance = length(gPointLight.position - input.worldPosition);
-        float factor = pow(saturate(-distance / gPointLight.radius + 1.0f), gPointLight.decay);
+        for (uint p = 0; p < gLightCount.pointCount; ++p)
+        {
+            PointLight light = gPointLights[p];
 
-        lighting += ComputeLighting(
-            surface,
-            pointLightDirection,
-            gPointLight.color.rgb,
-            gPointLight.intensity * factor);   // 減衰を intensity に掛け込む
+            //     光の向きは「光源 → ピクセル」。ピクセルごとに違う
+            float32_t3 lightDirection = normalize(input.worldPosition - light.position);
+            //     距離による減衰。radius で 0 になり、decay がカーブの鋭さ
+            float dist = length(light.position - input.worldPosition);
+            float factor = pow(saturate(-dist / light.radius + 1.0f), light.decay);
+
+            lighting += ComputeLighting(
+                surface, lightDirection, light.color.rgb, light.intensity * factor);
+        }
 
         //   ③ スポットライト
-        //     光の向きは点光源と同じく「光源 → ピクセル」
-        float32_t3 spotLightDirection = normalize(input.worldPosition - gSpotLight.position);
+        for (uint s = 0; s < gLightCount.spotCount; ++s)
+        {
+            SpotLight light = gSpotLights[s];
 
-        //     （1）距離による減衰。点光源とまったく同じ式
-        float spotDistance = length(gSpotLight.position - input.worldPosition);
-        float attenuationFactor = pow(saturate(-spotDistance / gSpotLight.distance + 1.0f), gSpotLight.decay);
+            float32_t3 lightDirection = normalize(input.worldPosition - light.position);
 
-        //     （2）角度による減衰。円錐の軸からどれだけズレているか
-        //       内積がそのまま cos を返す。cos は角度と逆向きに動く（中心ほど大きい）
-        float cosAngle = dot(spotLightDirection,
-            SafeNormalize(gSpotLight.direction, float32_t3(0.0f, -1.0f, 0.0f)));
-         //       減衰の幅。0 や負になると「0で割る」「明暗が反転する」事故になるので下限で守る
-        //         cosFalloffStart <= cosAngle のときは、ぼかし無しの固い円錐として扱う
-        float falloffRange = max(gSpotLight.cosFalloffStart - gSpotLight.cosAngle, 0.0001f);
-        //       cosAngle（縁）で 0、cosFalloffStart（減衰開始）で 1 になるように正規化
-        float falloffFactor = saturate((cosAngle - gSpotLight.cosAngle) / falloffRange);
+            //     （1）距離による減衰
+            float dist = length(light.position - input.worldPosition);
+            float attenuationFactor = pow(saturate(-dist / light.distance + 1.0f), light.decay);
 
-        lighting += ComputeLighting(
-            surface,
-            spotLightDirection,
-            gSpotLight.color.rgb,
-            gSpotLight.intensity * attenuationFactor * falloffFactor); // 減衰を2つ掛ける
+            //     （2）角度による減衰
+            float cosAngle = dot(lightDirection,
+                SafeNormalize(light.direction, float32_t3(0.0f, -1.0f, 0.0f)));
+            float falloffRange = max(light.cosFalloffStart - light.cosAngle, 0.0001f);
+            float falloffFactor = saturate((cosAngle - light.cosAngle) / falloffRange);
+
+            lighting += ComputeLighting(
+                surface, lightDirection, light.color.rgb,
+                light.intensity * attenuationFactor * falloffFactor);
+        }
 
         output.color.rgb = lighting;
         output.color.a = gMaterial.color.a * textureColor.a;

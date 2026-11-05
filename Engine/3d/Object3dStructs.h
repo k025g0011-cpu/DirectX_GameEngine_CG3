@@ -9,6 +9,12 @@ enum class SpecularModel : int32_t {
     BlinnPhong = 1,   // ハーフベクトルを使う。PBR につながる現代的な方式
 };
 
+// ライトの最大数
+//   StructuredBuffer の確保サイズ。実際に使う数は LightCount で伝える
+inline constexpr uint32_t kMaxDirectionalLights = 4;
+inline constexpr uint32_t kMaxPointLights = 16;
+inline constexpr uint32_t kMaxSpotLights = 16;
+
 // ================================================================
 // Object3d シェーダーとやり取りする構造体
 //   モデルもスプライトも、この形でデータを渡す
@@ -80,4 +86,14 @@ struct SpotLight {
     float cosAngle;          //  4 (オフセット 52)  円錐の縁の cos（ここで 0 になる）
     float cosFalloffStart;   //  4 (オフセット 56)  減衰が始まる角度の cos
     float padding;           //  4 (オフセット 60)
-};                           // 64
+};                           // 64 バイト
+
+// PS の b1（16B）
+// 各ライトが何個入っているかを伝える
+//   StructuredBuffer は「配列の長さ」を自分では持たないので、別途渡す
+struct LightCount {        // 全体＜16＞バイト
+    uint32_t directionalCount;   // 4
+    uint32_t pointCount;         // 4
+    uint32_t spotCount;          // 4
+    uint32_t padding;            // 4
+};

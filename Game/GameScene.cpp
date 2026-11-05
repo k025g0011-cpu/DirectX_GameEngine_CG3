@@ -77,14 +77,6 @@ void GameScene::Initialize(const EngineContext& context) {
 		uvCheckerTextureIndex, { 640.0f, 360.0f }, context_.winApp->GetClientSize());
 
 	// ════════════════════════════════════════
-	// 平行光源の定数バッファ（シーンに1つ。モデルとスプライトで共通）
-	// ════════════════════════════════════════
-	directionalLightResource_ =
-		context_.dxCommon->CreateBufferResource(sizeof(DirectionalLight));
-	directionalLightResource_->Map(0, nullptr,
-		reinterpret_cast<void**>(&directionalLightData_));
-
-	// ════════════════════════════════════════
 	// カメラの位置の定数バッファ（鏡面反射用。シーンに1つ）
 	//   中身は毎フレーム DrawScene で書き換える
 	// ════════════════════════════════════════
@@ -93,18 +85,32 @@ void GameScene::Initialize(const EngineContext& context) {
 
 	cameraData_->worldPosition = Vector3{ 0.0f, 0.0f, 0.0f };
 
-	
+
+	// ════════════════════════════════════════
+	// ライトの個数を伝える定数バッファ
+	// ════════════════════════════════════════
+	lightCountResource_ = context_.dxCommon->CreateBufferResource(sizeof(LightCount));
+	lightCountResource_->Map(0, nullptr, reinterpret_cast<void**>(&lightCountData_));
+
+	// ════════════════════════════════════════
+	// 平行光源の定数バッファ（シーンに1つ。モデルとスプライトで共通）
+	// ════════════════════════════════════════
+	directionalLightResource_ = context_.dxCommon->CreateBufferResource(
+		sizeof(DirectionalLight) * kMaxDirectionalLights);
+	directionalLightResource_->Map(0, nullptr,
+		reinterpret_cast<void**>(&directionalLightData_));
+
 	// ════════════════════════════════════════
 	// 点光源の定数バッファ
  	// ════════════════════════════════════════
-	pointLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(PointLight));
+	pointLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(PointLight) * kMaxPointLights);
 	pointLightResource_->Map(0, nullptr, reinterpret_cast<void**>(&pointLightData_));
 
 
 	// ════════════════════════════════════════
 	//   スポットライトの定数バッファ
 	// ════════════════════════════════════════
-	spotLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(SpotLight));
+	spotLightResource_ = context_.dxCommon->CreateBufferResource(sizeof(SpotLight) * kMaxSpotLights);
 	spotLightResource_->Map(0, nullptr, reinterpret_cast<void**>(&spotLightData_));
 
 	// ════════════════════════════════════════
@@ -128,6 +134,16 @@ void GameScene::Initialize(const EngineContext& context) {
 	spotObject->GetTransform().translate = { 0.0f, 4.0f, 0.0f };
 	spotObject->GetTransform().rotate = { kPi / 2.0f, 0.0f, 0.0f };
 	spotObject->AddComponent<SpotLightComponent>();
+
+
+	//   複数ライトの確認用。色違いの点光源を2つ足す
+	GameObject* lampRed = CreateGameObject("Lamp_Red");
+	lampRed->GetTransform().translate = { -3.0f, 1.0f, 0.0f };
+	lampRed->AddComponent<PointLightComponent>();
+
+	GameObject* lampBlue = CreateGameObject("Lamp_Blue");
+	lampBlue->GetTransform().translate = { 3.0f, 1.0f, 0.0f };
+	lampBlue->AddComponent<PointLightComponent>();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -301,24 +317,33 @@ void GameScene::SetSceneConstants(const CameraData& camera) {
 	// カメラの位置を GPU へ送る（鏡面反射の視線計算に使う）
 	cameraData_->worldPosition = camera.worldPosition;
 
-	// ＜平行光源の定数バッファ＞アドレスをルート番号にセット
+	// --- CBV として渡す ----------------------------
+	
+	// ＜ライトの個数の定数バッファ＞アドレスをルート番号にセット
 	commandList->SetGraphicsRootConstantBufferView(
-		Object3dPipeline::kRootParameterLight,
-		directionalLightResource_->GetGPUVirtualAddress());
+		Object3dPipeline::kRootParameterLightCount,
+		lightCountResource_->GetGPUVirtualAddress());
 
 	// ＜カメラの位置（world座標）の定数バッファ＞アドレスをルート番号にセット　（ 主に鏡面反射用 ）
 	commandList->SetGraphicsRootConstantBufferView(
 		Object3dPipeline::kRootParameterCamera,
 		cameraResource_->GetGPUVirtualAddress());
 
+	// --- StructuredBuffer (配列） なので SRV として渡す ----------------------------
+
+	// ＜平行光源の定数バッファ＞アドレスをルート番号にセット
+	commandList->SetGraphicsRootShaderResourceView(
+		Object3dPipeline::kRootParameterDirectionalLights,
+		directionalLightResource_->GetGPUVirtualAddress());
+
 	// ＜点光源の定数バッファ＞アドレスをルート番号にセット
-	commandList->SetGraphicsRootConstantBufferView(
-		Object3dPipeline::kRootParameterPointLight,
+	commandList->SetGraphicsRootShaderResourceView(
+		Object3dPipeline::kRootParameterPointLights,
 		pointLightResource_->GetGPUVirtualAddress());
 
 	// ＜スポットライトの定数バッファ＞アドレスをルート番号にセット
-	commandList->SetGraphicsRootConstantBufferView(
-		Object3dPipeline::kRootParameterSpotLight,
+	commandList->SetGraphicsRootShaderResourceView(
+		Object3dPipeline::kRootParameterSpotLights,
 		spotLightResource_->GetGPUVirtualAddress());
 }
 
@@ -329,55 +354,49 @@ void GameScene::SetSceneConstants(const CameraData& camera) {
 // ════════════════════════════════════════════════════════════════════
 void GameScene::CollectLights() {
 
-	// ───── 既定値（ライトが置かれていないときは消灯）─────
-	//   「使われない値」でも、計算に通る安全な値にすること
-	//     ゼロベクトルは normalize で NaN になり、NaN は加算で全体に伝染する
-	*directionalLightData_ = DirectionalLight{};
-	directionalLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
-	directionalLightData_->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // ゼロベクトル禁止
-	directionalLightData_->intensity = 0.0f;
+	//   既定値のリセットは不要になった
+	//     「使わない枠」は個数で切るので、中身がゴミでも読まれない
+	uint32_t directionalCount = 0;
+	uint32_t pointCount = 0;
+	uint32_t spotCount = 0;
 
-	*pointLightData_ = PointLight{};
-	pointLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
-	pointLightData_->position = Vector3{ 0.0f, 0.0f, 0.0f };
-	pointLightData_->intensity = 0.0f;
-	pointLightData_->radius = 1.0f;   // 0 だと -distance / 0 になる
-	pointLightData_->decay = 1.0f;   // 0 だと pow(x, 0) = 1 で減衰しない
-
-	*spotLightData_ = SpotLight{};
-	spotLightData_->color = Vector4{ 1.0f, 1.0f, 1.0f, 1.0f };
-	spotLightData_->position = Vector3{ 0.0f, 0.0f, 0.0f };
-	spotLightData_->intensity = 0.0f;
-	spotLightData_->direction = Vector3{ 0.0f, -1.0f, 0.0f };   // ゼロベクトル禁止
-	spotLightData_->distance = 1.0f;   // 0 だと -distance / 0 になる
-	spotLightData_->decay = 1.0f;
-	spotLightData_->cosAngle = 1.0f;   // 円錐が閉じている＝どこにも当たらない
-	spotLightData_->cosFalloffStart = 1.0f;
-
-
-	// ───── 全オブジェクトを走査する ─────
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
 
 		if (!gameObject->IsActive()) {
 			continue;
 		}
 
+		//   平行光源
 		DirectionalLightComponent* directional =
 			gameObject->GetComponent<DirectionalLightComponent>();
-		if (directional != nullptr && directional->IsEnabled()) {
-			*directionalLightData_ = directional->MakeGpuData();
+		if (directional != nullptr && directional->IsEnabled()
+			&& directionalCount < kMaxDirectionalLights) {
+			directionalLightData_[directionalCount] = directional->MakeGpuData();
+			++directionalCount;
 		}
 
+		//   点光源
 		PointLightComponent* point = gameObject->GetComponent<PointLightComponent>();
-		if (point != nullptr && point->IsEnabled()) {
-			*pointLightData_ = point->MakeGpuData();
+		if (point != nullptr && point->IsEnabled()
+			&& pointCount < kMaxPointLights) {
+			pointLightData_[pointCount] = point->MakeGpuData();
+			++pointCount;
 		}
 
+		//   スポットライト
 		SpotLightComponent* spot = gameObject->GetComponent<SpotLightComponent>();
-		if (spot != nullptr && spot->IsEnabled()) {
-			*spotLightData_ = spot->MakeGpuData();
+		if (spot != nullptr && spot->IsEnabled()
+			&& spotCount < kMaxSpotLights) {
+			spotLightData_[spotCount] = spot->MakeGpuData();
+			++spotCount;
 		}
 	}
+
+	// 詰め終わってから個数を書く
+	lightCountData_->directionalCount = directionalCount;
+	lightCountData_->pointCount = pointCount;
+	lightCountData_->spotCount = spotCount;
+	lightCountData_->padding = 0;
 }
 
 // ════════════════════════════════════════════════════════════════════
