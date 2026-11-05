@@ -61,25 +61,20 @@ void Editor::Initialize(const EngineContext& context, Camera* gameCamera) {
 
 // ════════════════════════════════════════════════════════════════════
 // 更新
-//   ビューを先に描いて viewMode_ と isViewHovered_ を決め、
-//   それからカメラを更新する
+//   ドックスペースを発行してから各パネルを描き、
+//   そのあとでドロップ位置を判定する
 // ════════════════════════════════════════════════════════════════════
 void Editor::Update() {
 
-	// ════════════════════════════════════════
-	// ドロップされたファイルを取り込む
-	//  今はどこに落としても受け取る
-	// ════════════════════════════════════════
-	for (const std::string& droppedFile : context_->winApp->GetDroppedFiles()) {
-		context_->assetDatabase->Import(droppedFile);
-	}
-
 #ifdef USE_IMGUI
-	layout_.Update();       // ① 画面サイズから全パネルの矩形を計算
-	ImportDroppedFiles();   // ② ①の矩形とドロップ位置を比べて取り込む
-	DrawViewPanel();        // ③ ここで viewMode_ と isViewHovered_ が決まる
+	layout_.Update();       // ① ホストウィンドウとドックスペースを発行する
+	DrawViewPanel();        // ② ここで viewMode_ と isViewHovered_ が決まる
 	DrawToolbar();
 	DrawAssetPanel();
+
+	//   ③ 各パネルの実際の矩形が確定してから、ドロップ位置を判定する
+	//      矩形は Begin のあとにしか分からないので、パネルを描く前には判定できない
+	ImportDroppedFiles();
 #endif
 
 	// 編集タブの画像の上にマウスがあるときだけ、カメラ操作を受け付ける
@@ -173,6 +168,14 @@ void Editor::DrawToolbar() {
 		float timeScale = gameTime->GetTimeScale();
 		if (ImGui::DragFloat("速度", &timeScale, 0.01f, 0.0f, 3.0f, "%.2f")) {
 			gameTime->SetTimeScale(timeScale);
+		}
+
+		// ───── レイアウト初期化 ─────
+		//   パネルを重ねたり動かしすぎて戻せなくなったときの脱出口
+		//   予約だけして、実際の組み直しは次のフレームの layout_.Update() が行う
+		ImGui::SameLine();
+		if (ImGui::Button("レイアウト初期化", ImVec2(130.0f, 0.0f))) {
+			layout_.RequestResetLayout();
 		}
 
 		// ───── fps（右端に寄せる） ─────

@@ -107,6 +107,20 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigWindowsMoveFromTitleBarOnly = true;   // ウィンドウはタイトルバーでのみ移動
+
+	// ────────────────────────────────────────────────────────────────
+	// パネルのドッキング（結合・分割・サイズ変更）を許可する
+	//   このフラグだけでは見た目は変わらない。
+	//   いまのパネルは SetNextWindowPos / NoMove / NoResize で固定しているので、
+	//   ImGui 側が「動かせないウィンドウ」と判断してドッキング対象にならない
+	//     → 固定をやめるのは #16.8-2
+	//
+	//   ※ ViewportsEnable（パネルをウィンドウの外へ切り離す機能）は入れない
+	//     DX12 ではパネルごとのスワップチェーン管理と
+	//     UpdatePlatformWindows / RenderPlatformWindowsDefault の呼び出しが必要になる
+	// ────────────────────────────────────────────────────────────────
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
 	ImGui::StyleColorsDark();
 
 	// ────────────────────────────────────────────────────────────────
@@ -117,23 +131,55 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		"C:/Windows/Fonts/meiryo.ttc",          // メイリオ（Windows 標準）
 		18.0f,                                   // ピクセルサイズ
 		nullptr,                                 // フォント設定（既定でよい）
-		io.Fonts->GetGlyphRangesJapanese());     // ★用意する文字の範囲
+		io.Fonts->GetGlyphRangesJapanese());     // 用意する文字の範囲
 	assert(japaneseFont != nullptr);
 
 	ImGui_ImplWin32_Init(winApp.GetHwnd());
 
-	// ImGui のフォントテクスチャ用に SRV を1つ確保する
-	uint32_t imguiSrvIndex = dxCommon.AllocateSrv();
+	// ────────────────────────────────────────────────────────────────
+	// DX12 バックエンドの初期化
+	//   新しい ImGui は実行中にテクスチャを増減するため、
+	//   SRV を起動時に1枠渡すのではなく、必要なときにアプリへ要求してくる
+	//     → 確保／解放の関数をこちらから渡す
+	// ────────────────────────────────────────────────────────────────
+	ImGui_ImplDX12_InitInfo initInfo{};
+	initInfo.Device = dxCommon.GetDevice().Get();
+	//   テクスチャの転送に使う。新しいバックエンドは自分で GPU へ送るので必須
+	initInfo.CommandQueue = dxCommon.GetCommandQueue().Get();
+	initInfo.NumFramesInFlight = DirectXCommon::kBackBufferCount;
+	initInfo.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;   // RTV のフォーマットと一致させる
+	initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;               // ImGui は深度を使わない
+	initInfo.SrvDescriptorHeap = dxCommon.GetSrvDescriptorHeap().Get();
 
-	ImGui_ImplDX12_Init(
-		dxCommon.GetDevice().Get(),
-		DirectXCommon::kBackBufferCount,
-		DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,          // RTV のフォーマットと一致させる
-		dxCommon.GetSrvDescriptorHeap().Get(),
-		dxCommon.GetSrvCpuDescriptorHandle(imguiSrvIndex),
-		dxCommon.GetSrvGpuDescriptorHandle(imguiSrvIndex));
+	//   コールバックに「誰に頼むか」を伝えるための置き場
+	//     コールバックは生の関数ポインタなので、this のような文脈を持てない
+	initInfo.UserData = &dxCommon;
 
-	ImGui::GetIO().Fonts->Build();
+	//   SRV を1枠ください、と言われたときの処理
+	initInfo.SrvDescriptorAllocFn =
+		[](ImGui_ImplDX12_InitInfo* info,
+			D3D12_CPU_DESCRIPTOR_HANDLE* outCpuHandle,
+			D3D12_GPU_DESCRIPTOR_HANDLE* outGpuHandle) {
+
+				DirectXCommon* dx = static_cast<DirectXCommon*>(info->UserData);
+
+				const uint32_t index = dx->AllocateSrv();
+				*outCpuHandle = dx->GetSrvCpuDescriptorHandle(index);
+				*outGpuHandle = dx->GetSrvGpuDescriptorHandle(index);
+		};
+
+	//   SRV を返します、と言われたときの処理
+	initInfo.SrvDescriptorFreeFn =
+		[](ImGui_ImplDX12_InitInfo*,
+			D3D12_CPU_DESCRIPTOR_HANDLE,
+			D3D12_GPU_DESCRIPTOR_HANDLE) {
+
+				// いまの DirectXCommon は SRV を前から順に配るだけで、返却の仕組みがない
+				//   何もしなくても破綻はしない（使い終わった枠が再利用されないだけ）
+				//   ※ 実行中にテクスチャを大量に作り直すようになったら、空き管理が必要
+		};
+
+	ImGui_ImplDX12_Init(&initInfo);
 #endif
 
 	// ════════════════════════════════════════════════════════════════

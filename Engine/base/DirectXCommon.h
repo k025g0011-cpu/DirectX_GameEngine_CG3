@@ -84,6 +84,8 @@ public:
 	const Microsoft::WRL::ComPtr<ID3D12Device>& GetDevice() const { return device_; }
 	const Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>& GetCommandList() const { return commandList_; }
 	const Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>& GetSrvDescriptorHeap() const { return srvDescriptorHeap_; }
+	//   ImGui の DX12 バックエンドが、テクスチャを GPU へ転送するのに使う
+	const Microsoft::WRL::ComPtr<ID3D12CommandQueue>& GetCommandQueue() const { return commandQueue_; }
 
 	const Microsoft::WRL::ComPtr<IDxcUtils>& GetDxcUtils() const { return dxcUtils_; }
 	const Microsoft::WRL::ComPtr<IDxcCompiler3>& GetDxcCompiler() const { return dxcCompiler_; }

@@ -8,25 +8,30 @@
 // ════════════════════════════════════════════════════════════════════
 /// <summary>エディタのパネル種別</summary>
 enum class EditorPanel : uint32_t {
-	Toolbar,    // 行1       : 再生／一時停止、Edit / Game 切り替え
-	View,       // 行2 中央   : ゲーム画面（オフスクリーンの RenderTexture）
-	Hierarchy,  // 行2 左     : オブジェクト一覧
-	Inspector,  // 行2 右     : 選択中オブジェクトの詳細
-	Asset,      // 行3 左     : アセット一覧           
-	Debug,      // 行3 中央   : ログ・FPS など
-	Settings,   // 行3 右     : ライトや UV などゲーム固有の設定
+	Toolbar,    // 最上段    : 再生／一時停止、Edit / Game 切り替え（固定配置）
+	View,       // 中央      : ゲーム画面（オフスクリーンの RenderTexture）
+	Hierarchy,  // 左        : オブジェクト一覧
+	Inspector,  // 右        : 選択中オブジェクトの詳細
+	Asset,      // 下段 左   : アセット一覧
+	Debug,      // 下段 中央 : ログ・FPS など
+	Settings,   // 下段 右   : ライトや UV などゲーム固有の設定
 	kMaxCount,  // 種別の数（配列サイズ用。これより下に増やさない）
 };
 
 // ════════════════════════════════════════════════════════════════════
 // エディタの画面レイアウト
-//   各パネルの位置とサイズを毎フレーム計算し、固定配置で開く
-//   ・ドッキングは使わない（並べ替えない前提）
-//   ・ウィンドウのリサイズには自動で追従する
+//   ・ツールバーだけは最上段に固定する（ドッキング対象から外す）
+//   ・それ以外のパネルはドッキング可能。位置とサイズは ImGui が持つ
+//   ・初回起動時だけ既定の配置をコードで組む。以降は imgui.ini が復元する
+//
+//   rects_ の意味
+//     各パネルが「実際に置かれた矩形」を記録したもの。
+//     こちらから位置を指示するための値ではない（ツールバーだけは例外）
 // ════════════════════════════════════════════════════════════════════
 class EditorLayout {
 public:
-	/// <summary>画面サイズから全パネルの矩形を計算する。毎フレーム最初に呼ぶ</summary>
+	/// <summary>ホストウィンドウとドックスペースを発行する。毎フレーム最初に呼ぶ</summary>
+	///   ドッキング可能なパネルを BeginPanel するより前に呼ぶ必要がある
 	void Update();
 
 	/// <summary>パネルを開く。ImGui::Begin と同じく、戻り値に関わらず EndPanel を呼ぶこと</summary>
@@ -36,10 +41,15 @@ public:
 	void EndPanel();
 
 	/// <summary>指定した点がパネルの矩形の中にあるか</summary>
-	/// <param name="panel">調べたいパネル</param>
-	/// <param name="x">クライアント座標 X（= ImGui の画面座標）</param>
-	/// <param name="y">クライアント座標 Y</param>
+		/// <param name="panel">調べたいパネル</param>
+		/// <param name="x">クライアント座標 X（= ImGui の画面座標）</param>
+		/// <param name="y">クライアント座標 Y</param>
 	bool IsInsidePanel(EditorPanel panel, float x, float y) const;
+
+	/// <summary>次のフレームで既定配置に戻すよう予約する</summary>
+	///   パネルを重ねすぎて戻せなくなったときの脱出口
+	void RequestResetLayout() { resetLayoutRequested_ = true; }
+
 
 private:
 	// 1つのパネルの矩形（imgui.h に依存しないよう自前で持つ）
@@ -50,6 +60,15 @@ private:
 		float height = 0.0f;
 	};
 
+	/// <summary>いま開いているウィンドウの実際の矩形を記録する</summary>
+	///   ImGui::Begin と ImGui::End の間でだけ呼べる
+	/// <param name="isVisible">Begin の戻り値。false なら矩形を空にして当たり判定を無効にする</param>
+	void RecordRect(EditorPanel panel, bool isVisible);
+
+	/// <summary>初回起動時の既定配置を組む</summary>
+	///   ImGuiID は unsigned int なので、imgui.h に依存せず uint32_t で受け取る
+	void BuildDefaultLayout(uint32_t dockSpaceId, float width, float height);
+
 	Rect rects_[static_cast<uint32_t>(EditorPanel::kMaxCount)]{};
 
 	// ────────────────────────────────────────────────────────────────
@@ -59,9 +78,18 @@ private:
 	//   固定値にすると、フォントを変えたときに中身がはみ出す
 	float toolbarHeight_ = 40.0f;
 
-	static constexpr float kHierarchyWidth = 180.0f;   // 260 → 220
-	static constexpr float kInspectorWidth = 280.0f;   // 320 → 300
-	static constexpr float kBottomHeight = 180.0f;
-	static constexpr float kAssetWidth = 360.0f;  
-	static constexpr float kSettingsWidth = 320.0f;   
+	// 既定配置に戻す予約
+	//   ボタンが押されるのは Update より後なので、その場では実行できない
+	bool resetLayoutRequested_ = false;
+
+	// ────────────────────────────────────────────────────────────────
+	// 初回起動時の既定配置の比率
+	//   ドッキングは分割位置を比率で持つので、ピクセル値を渡しても意味がない
+	//   ユーザーが変えた値は imgui.ini に残るため、ここは最初の1回だけ効く
+	// ────────────────────────────────────────────────────────────────
+	static constexpr float kBottomRatio = 0.22f;   // 全体に対する下段の高さ
+	static constexpr float kHierarchyRatio = 0.13f;   // 中段に対する左の幅
+	static constexpr float kInspectorRatio = 0.22f;   // 左を取った残りに対する右の幅
+	static constexpr float kAssetRatio = 0.28f;   // 下段に対する左の幅
+	static constexpr float kSettingsRatio = 0.35f;   // 左を取った残りに対する右の幅
 };
