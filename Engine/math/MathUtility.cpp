@@ -1,5 +1,7 @@
 #include "MathUtility.h"
+#include <algorithm>   // std::clamp（asin に渡す前に範囲を切る）
 #include <cmath>
+#include <utility>   // std::swap（ピボット選択で行を入れ替える）
 
 // ============================================
 // Vector3 算術演算子
@@ -166,9 +168,33 @@ Matrix4x4 Inverse(const Matrix4x4& m) {
 
 	// 2. 掃き出し法
 	for (int i = 0; i < 4; i++) {
-		// ピボット選択（絶対値が最大のものを選ぶと精度が安定するが、今回は簡易的に0チェックのみ）
+
+		// ────────────────────────────────────────────────────────
+		// 部分ピボット選択
+		//   i列目で絶対値が最大の行を探し、i行目と入れ替える
+		//   これが無いと、対角成分が 0 の行列で失敗する
+		// 例：X軸90度回転は m[1][1] も m[2][2] も cos(90°) = 0
+		//   精度の安定にも効く（小さい数で割らずに済む）
+		// ────────────────────────────────────────────────────────
+		int pivotRow = i;
+		for (int k = i + 1; k < 4; k++) {
+			if (std::abs(temp[k][i]) > std::abs(temp[pivotRow][i])) {
+				pivotRow = k;
+			}
+		}
+		if (pivotRow != i) {
+			for (int j = 0; j < 8; j++) {
+				std::swap(temp[i][j], temp[pivotRow][j]);
+			}
+		}
+
 		float pivot = temp[i][i];
-		if (std::abs(pivot) < 1e-6f) return result; // 逆行列が存在しない場合は零行列を返す
+
+		// ここまでやって 0 なら、本当に逆行列が存在しない（ランクが足りない）
+		//   零行列を返すと normalize で NaN になるので、単位行列を返して無害にする
+		if (std::abs(pivot) < 1e-6f) {
+			return MakeIdentity4x4();
+		}
 
 		// i行目を pivot で割って temp[i][i] を 1 にする
 		for (int j = 0; j < 8; j++) temp[i][j] /= pivot;
@@ -297,13 +323,90 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 
 	Matrix4x4 matTranslate = MakeTranslateMatrix(translate);
 
-	// 2. 回転行列を合成 (スライドの一般的な順序 Rz * Rx * Ry を想定)
-	// 既存の operator* を使用
+	// 2. 回転行列を合成（X → Y → Z の順。行ベクトル規約なので左から順に適用される）
+	//	　　DecomposeAffineMatrix はこの順序を前提に逆算する。変えるなら両方直す
 	Matrix4x4 matRotate = matRotateX * matRotateY * matRotateZ;
 
 	// 3. 全てを合成 (Scaling * Rotation * Translation)
 	// 既存の operator* を使用
 	Matrix4x4 result = matScale * matRotate * matTranslate;
+
+	return result;
+}
+
+// --- アフィン変換行列を scale / rotate / translate に分解する ---
+//   MakeAffineMatrix の逆の操作。モデルファイルのノード行列を
+//   GameObject の Transform に移すために使う
+Transform DecomposeAffineMatrix(const Matrix4x4& matrix) {
+
+	Transform result{};
+
+	// ════════════════════════════════════════
+	// ① 平行移動
+	//   行ベクトル規約なので、4行目にそのまま入っている
+	// ════════════════════════════════════════
+	result.translate = Vector3{ matrix.m[3][0], matrix.m[3][1], matrix.m[3][2] };
+
+	// ════════════════════════════════════════
+	// ② スケール
+	//   合成は S * R なので、各行は「回転した軸ベクトル × その軸のスケール」
+	//   回転は長さを変えないので、行の長さがそのままスケールになる
+	// ════════════════════════════════════════
+	const Vector3 axisX{ matrix.m[0][0], matrix.m[0][1], matrix.m[0][2] };
+	const Vector3 axisY{ matrix.m[1][0], matrix.m[1][1], matrix.m[1][2] };
+	const Vector3 axisZ{ matrix.m[2][0], matrix.m[2][1], matrix.m[2][2] };
+
+	result.scale = Vector3{ Length(axisX), Length(axisY), Length(axisZ) };
+
+	// ════════════════════════════════════════
+	// ③ 回転部分だけを取り出す
+	//   スケールで割って長さ1に戻すと、純粋な回転行列が残る
+	//   スケール 0 の軸は割れないので、元の軸で代用する（0除算を避ける）
+	// ════════════════════════════════════════
+	Matrix4x4 rotation = MakeIdentity4x4();
+
+	const Vector3 unitX =
+		(result.scale.x > 1e-6f) ? Normalize(axisX) : Vector3{ 1.0f, 0.0f, 0.0f };
+	const Vector3 unitY =
+		(result.scale.y > 1e-6f) ? Normalize(axisY) : Vector3{ 0.0f, 1.0f, 0.0f };
+	const Vector3 unitZ =
+		(result.scale.z > 1e-6f) ? Normalize(axisZ) : Vector3{ 0.0f, 0.0f, 1.0f };
+
+	rotation.m[0][0] = unitX.x; rotation.m[0][1] = unitX.y; rotation.m[0][2] = unitX.z;
+	rotation.m[1][0] = unitY.x; rotation.m[1][1] = unitY.y; rotation.m[1][2] = unitY.z;
+	rotation.m[2][0] = unitZ.x; rotation.m[2][1] = unitZ.y; rotation.m[2][2] = unitZ.z;
+
+	// ════════════════════════════════════════
+	// ④ 回転行列からオイラー角（XYZ順）を逆算する
+	//
+	//   R = Rx * Ry * Rz を展開すると、各成分はこうなる
+	//     （s = sin, c = cos, 添字は軸）
+	//
+	//     m[0][0] = cy*cz          m[0][1] = cy*sz          m[0][2] = -sy
+	//     m[1][2] = sx*cy
+	//     m[2][1] = cx*sy*sz - sx*cz
+	//     m[2][2] = cx*cy
+	//
+	//   ・m[0][2] は sy だけでできている       → y が直接求まる
+	//   ・m[1][2] / m[2][2] は cy が共通       → 約分されて tan(x) になる
+	//   ・m[0][1] / m[0][0] も cy が共通       → 約分されて tan(z) になる
+	//
+	//   atan2 を使うのは、tan だけだと ±180度の区別がつかないため
+	// ════════════════════════════════════════
+	result.rotate.y = std::asin(std::clamp(-rotation.m[0][2], -1.0f, 1.0f));
+
+	//   ジンバルロック
+	//     cos(y) が 0 に近いと、上の「約分」の分母が 0 になって x と z が求まらない
+	//     幾何的にも、このとき X 回転と Z 回転は同じ見た目になり、答えが一つに定まらない
+	//     → z を 0 に決め打ちして、x に全部押し付ける（よく使われる約束）
+	if (std::abs(rotation.m[0][2]) < 0.9999f) {
+		result.rotate.x = std::atan2(rotation.m[1][2], rotation.m[2][2]);
+		result.rotate.z = std::atan2(rotation.m[0][1], rotation.m[0][0]);
+	} else {
+		//   z = 0 とすると m[1][1] = cx, m[2][1] = -sx になるので、ここから x が出る
+		result.rotate.x = std::atan2(-rotation.m[2][1], rotation.m[1][1]);
+		result.rotate.z = 0.0f;
+	}
 
 	return result;
 }
@@ -380,6 +483,21 @@ Vector3 TransformNormal(const Vector3& vector, const Matrix4x4& matrix) {
 	result.x = vector.x * matrix.m[0][0] + vector.y * matrix.m[1][0] + vector.z * matrix.m[2][0];
 	result.y = vector.x * matrix.m[0][1] + vector.y * matrix.m[1][1] + vector.z * matrix.m[2][1];
 	result.z = vector.x * matrix.m[0][2] + vector.y * matrix.m[1][2] + vector.z * matrix.m[2][2];
+
+	return result;
+}
+
+// 点を行列で変換（位置ベクトル用、w=1として扱う）
+Vector3 TransformPoint(const Vector3& point, const Matrix4x4& matrix) {
+	Vector3 result;
+
+	// w=1として扱うため、平行移動成分(m[3][0-2])も足す
+	result.x = point.x * matrix.m[0][0] + point.y * matrix.m[1][0] + point.z * matrix.m[2][0] + matrix.m[3][0];
+	result.y = point.x * matrix.m[0][1] + point.y * matrix.m[1][1] + point.z * matrix.m[2][1] + matrix.m[3][1];
+	result.z = point.x * matrix.m[0][2] + point.y * matrix.m[1][2] + point.z * matrix.m[2][2] + matrix.m[3][2];
+
+	// ※ 射影行列のように w が 1 でなくなる行列には使えない（w で割る処理が必要）
+	//   　アフィン変換（スケール・回転・平行移動）専用
 
 	return result;
 }

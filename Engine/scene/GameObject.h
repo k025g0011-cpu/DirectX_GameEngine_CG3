@@ -71,6 +71,22 @@ public:
 	Matrix4x4 GetWorldMatrix() const;
 
 	// ────────────────────────────────────────────────────────────────
+	// 親子関係
+	//   Transform の値は「親から見た相対値」になる
+	//   所有権は Scene の gameObjects_ にあるので、ここは生ポインタで借りるだけ
+	// ────────────────────────────────────────────────────────────────
+
+	/// <summary>親を設定する（nullptr で親なしに戻す）</summary>
+	///   自分自身や自分の子孫は親にできない（輪になるので無視される）
+	void SetParent(GameObject* parent);
+
+	GameObject* GetParent() const { return parent_; }
+	const std::vector<GameObject*>& GetChildren() const { return children_; }
+
+	/// <summary>このオブジェクト単体の変換（親を含まない）</summary>
+	Matrix4x4 GetLocalMatrix() const;
+
+	// ────────────────────────────────────────────────────────────────
 	// 基本情報
 	// ────────────────────────────────────────────────────────────────
 	const std::string& GetName() const { return name_; }
@@ -95,6 +111,12 @@ private:
 
 	// 足された機能たち。unique_ptr なので GameObject と寿命を共にする
 	std::vector<std::unique_ptr<Component>> components_;
+
+	// ────────────────────────────────────────────────────────────────
+	// 親子関係（どちらも借りているだけ。所有権は Scene の gameObjects_ にある）
+	// ────────────────────────────────────────────────────────────────
+	GameObject* parent_ = nullptr;
+	std::vector<GameObject*> children_;
 };
 
 

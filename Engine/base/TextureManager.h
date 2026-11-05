@@ -5,9 +5,14 @@
 #include <string>
 #include <vector>
 #include <wrl.h>
+#include <optional>
 
 // 前方宣言
 class DirectXCommon;
+
+//   DirectXTex.h をここで include すると、TextureManager.h を使う全ファイルに
+//   重いヘッダが広がる。参照でしか使わないので前方宣言で足りる
+namespace DirectX { class ScratchImage; }
 
 // ════════════════════════════════════════════════════════════════════
 // テクスチャの読み込みと管理
@@ -24,6 +29,13 @@ public:
 	/// <returns>SRV ヒープ上の番号。描画時にこれを使う</returns>
 	uint32_t Load(const std::string& filePath);
 
+	/// <summary>メモリ上の画像を読み込む（.glb の埋め込みテクスチャ用）</summary>
+	/// <param name="name">キャッシュのキー。"model.glb#*0" のように一意にする</param>
+	/// <param name="data">png / jpg のバイト列の先頭</param>
+	/// <param name="size">バイト数</param>
+	/// <returns>SRV ヒープ上の番号。描画時にこれを使う</returns>
+	uint32_t LoadFromMemory(const std::string& name, const void* data, size_t size);
+
 	/// <summary>
 	/// 指定したテクスチャ（SRV)の GPU ディスクリプタハンドルを取得する
 	/// </summary>
@@ -37,8 +49,9 @@ public:
 private:
 	// 1枚のテクスチャが持つ情報
 	struct TextureData {
-		// 読み込み元のパス（同じものを2回読まないための照合用）
-		std::string filePath;
+		// 識別用のキー（同じものを2回読まないための照合用）
+		//   ファイルなら相対パス、埋め込みなら "model.glb#*0" のような名前
+		std::string key;
 		// VRAM 上のテクスチャ本体
 		Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 		// SRV ヒープの何番に置いたか
@@ -49,7 +62,12 @@ private:
 	/// <returns>　作った SRV　の番号</returns>
 	uint32_t CreateDummyTexture();
 	
+	/// <summary>読み込み済みならその番号を返す。無ければ nullopt</summary>
+	std::optional<uint32_t> FindCached(const std::string& key) const;
 
+	/// <summary>CPU 上の画像を GPU に載せ、一覧に登録して番号を返す</summary>
+	///   Load と LoadFromMemory の「後半」は完全に同じなので、ここにまとめる
+	uint32_t RegisterTexture(const std::string& key, const DirectX::ScratchImage& mipImages);
 
 	// 借りているもの（所有していない）
 	DirectXCommon* dxCommon_ = nullptr;

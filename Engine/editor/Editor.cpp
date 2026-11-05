@@ -14,6 +14,10 @@
 
 namespace {
 
+	/// <summary>ヒエラルキーでオブジェクトを掴むときの小包の名前（32文字まで）</summary>
+	///   GameObject はアセットではないので、AssetPayload には置かずここで持つ
+	constexpr const char* kGameObjectPayload = "GAMEOBJECT";
+
 	/// <summary>アセットの種類に対応する小包の名前。ドラッグできないなら nullptr</summary>
 	const char* GetPayloadType(AssetType type) {
 		switch (type) {
@@ -365,6 +369,76 @@ void Editor::DrawAssetPanel() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// 1オブジェクトとその子を再帰で描く
+// ════════════════════════════════════════════════════════════════════
+void Editor::DrawObjectNode(GameObject* object) {
+#ifdef USE_IMGUI
+
+	const std::vector<GameObject*>& children = object->GetChildren();
+	const bool hasChildren = !children.empty();
+
+	ImGuiTreeNodeFlags flags =
+		ImGuiTreeNodeFlags_OpenOnArrow |      // 矢印を押したときだけ開閉する
+		ImGuiTreeNodeFlags_SpanAvailWidth |   // 行の端までクリック範囲にする
+		ImGuiTreeNodeFlags_DefaultOpen;       // 最初から開いた状態で出す
+
+	if (!hasChildren) {
+		//   子が無いものは矢印を出さず、開閉もしない
+		//   NoTreePushOnOpen を付けると TreePop が不要になる
+		flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+	}
+	if (object == selectedObject_) {
+		flags |= ImGuiTreeNodeFlags_Selected;
+	}
+
+	//   ラベルではなくポインタを ID にする（同名でも区別できる）
+	const bool opened =
+		ImGui::TreeNodeEx(object, flags, "%s", object->GetName().c_str());
+
+	//   行をクリックしたら選択する
+	//     矢印を押して開閉しただけのときは選択を変えない
+	if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+		selectedObject_ = object;
+	}
+
+	// ───── ドラッグ元：このノードを掴めるようにする ─────
+	if (ImGui::BeginDragDropSource()) {
+		//   小包の中身は「どのオブジェクトか」を指すポインタ
+		ImGui::SetDragDropPayload(kGameObjectPayload, &object, sizeof(GameObject*));
+		//   ドラッグ中、カーソルに付いてくる見た目
+		ImGui::Text("%s", object->GetName().c_str());
+		ImGui::EndDragDropSource();
+	}
+
+	// ───── ドロップ先：ここに落とされたら、自分の子にする ─────
+	if (ImGui::BeginDragDropTarget()) {
+		if (const ImGuiPayload* payload =
+			ImGui::AcceptDragDropPayload(kGameObjectPayload)) {
+
+			//   小包にはポインタが入っているので、2回たどる
+			GameObject* dropped = *static_cast<GameObject* const*>(payload->Data);
+
+			//  この場で SetParent すると、走査中の children_ が変わって壊れる
+			//    予約だけして、描き終わってから実行する
+			pendingChild_ = dropped;
+			pendingParent_ = object;
+		}
+		ImGui::EndDragDropTarget();
+	}
+
+	//   開いているときだけ子を描く
+	//     葉ノードは NoTreePushOnOpen なので TreePop を呼んではいけない
+	if (opened && hasChildren) {
+		for (GameObject* child : children) {
+			DrawObjectNode(child);
+		}
+		ImGui::TreePop();
+	}
+
+#endif
+}
+
+// ════════════════════════════════════════════════════════════════════
 // オフスクリーンテクスチャを1枚表示する
 //   縦横比を保ったまま、タブの中央に最大サイズで配置する
 // ════════════════════════════════════════════════════════════════════
@@ -431,18 +505,28 @@ void Editor::DrawObjectPanels(
 	// ───────────────────────────────────────
 	if (layout_.BeginPanel(EditorPanel::Hierarchy)) {
 
-		for (size_t i = 0; i < gameObjects.size(); ++i) {
-			GameObject* gameObject = gameObjects[i].get();
+		// ───── シーンのルート ─────
+		//   ここに落とすと親が外れる（Unity の Hierarchy と同じ感覚）
+		if (ImGui::Selectable("DD シーン DD")) {
+			selectedObject_ = nullptr;   // 何も選んでいない状態に戻す
+		}
+		if (ImGui::BeginDragDropTarget()) {
+			if (const ImGuiPayload* payload =
+				ImGui::AcceptDragDropPayload(kGameObjectPayload)) {
 
-			// 同じ名前のオブジェクトがあっても別物として扱えるようにする
-			ImGui::PushID(static_cast<int>(i));
-
-			const bool isSelected = (selectedObjectIndex_ == static_cast<int32_t>(i));
-			if (ImGui::Selectable(gameObject->GetName().c_str(), isSelected)) {
-				selectedObjectIndex_ = static_cast<int32_t>(i);
+				pendingChild_ = *static_cast<GameObject* const*>(payload->Data);
+				pendingParent_ = nullptr;   // 親なしにする
 			}
+			ImGui::EndDragDropTarget();
+		}
+		ImGui::Separator();
 
-			ImGui::PopID();
+		//   ルート（親を持たないもの）だけを起点に描く
+		//     子は DrawObjectNode が再帰でたどるので、ここでは触らない
+		for (const std::unique_ptr<GameObject>& gameObject : gameObjects) {
+			if (gameObject->GetParent() == nullptr) {
+				DrawObjectNode(gameObject.get());
+			}
 		}
 
 		ImGui::Separator();
@@ -451,16 +535,24 @@ void Editor::DrawObjectPanels(
 	layout_.EndPanel();
 
 	// ───────────────────────────────────────
+	// 予約されていた親子の変更を実行する
+	//   走査が終わったこの位置なら、children_ を書き換えても安全
+	//   輪になる操作は SetParent が弾くので、ここでは確認しない
+	// ───────────────────────────────────────
+	if (pendingChild_ != nullptr) {
+		pendingChild_->SetParent(pendingParent_);
+		pendingChild_ = nullptr;
+		pendingParent_ = nullptr;
+	}
+
+	// ───────────────────────────────────────
 	// 詳細
 	// ───────────────────────────────────────
 	if (layout_.BeginPanel(EditorPanel::Inspector)) {
 
-		if (selectedObjectIndex_ >= 0 &&
-			selectedObjectIndex_ < static_cast<int32_t>(gameObjects.size())) {
-
+		if (selectedObject_ != nullptr) {
 			// ここだけ。中身は GameObject と各コンポーネントが描く
-			gameObjects[selectedObjectIndex_]->DrawInspector();
-
+			selectedObject_->DrawInspector();
 		} else {
 			ImGui::TextDisabled("(未選択)");
 		}

@@ -65,29 +65,45 @@ void Model::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
         const MaterialData& src = modelData.materials[i];   // 読み取り元（CPU データ）
         MaterialResource& dst = materials_[i];              // 書き込み先（& 必須）
 
+        // 表示用の名前（ModelData は捨てられるので、ここで写しておく）
+        dst.name = src.name;
+
         // 定数バッファ
         dst.resource = dxCommon_->CreateBufferResource(sizeof(Material));
         dst.resource->Map(0, nullptr, reinterpret_cast<void**>(&dst.data));
-        dst.data->color = src.color;             // mtl の Kd + d
-        dst.data->enableLighting = true;         // 3D モデルは基本ライティングする
+        dst.data->color = src.color;                   // Kd + d
+        dst.data->enableLighting = true;               // 3D モデルは基本ライティングする
         dst.data->uvTransform = MakeIdentity4x4();
-        dst.data->shininess = 20.0f;   // ほどよい光沢
-        dst.data->specularColor = Vector3{ 1.0f, 1.0f, 1.0f };   // 既定は白
-        dst.data->specularModel = SpecularModel::Phong;   // 既定は従来どおり
+        dst.data->shininess = src.shininess;           // Ns。ファイルから
+        dst.data->specularColor = src.specularColor;   // Ks。ファイルから
+        dst.data->specularModel = SpecularModel::Phong;
 
         // テクスチャ
-        //   mtl に map_Kd が無いモデルは白1x1で代用する（白は乗算の単位元なので Kd がそのまま出る）
-        std::string texturePath = src.textureFilePath;
-        if (texturePath.empty()) {
-            texturePath = "resources/white1x1.png";
+        //   ① モデルに埋め込まれている（.glb）
+        //   ② 外部ファイル（.obj / .gltf）
+        //   ③ どちらも無ければ白1x1
+        //      （白は乗算の単位元なので、マテリアルの色がそのまま出る）
+        if (src.embeddedTextureIndex >= 0) {
+            const EmbeddedTexture& embedded =
+                modelData.embeddedTextures[src.embeddedTextureIndex];
+            dst.textureSrvIndex = textureManager_->LoadFromMemory(
+                embedded.name, embedded.bytes.data(), embedded.bytes.size());
+        } else {
+            std::string texturePath = src.textureFilePath;
+            if (texturePath.empty()) {
+                texturePath = "resources/white1x1.png";
+            }
+            dst.textureSrvIndex = textureManager_->Load(texturePath);
         }
-        dst.textureSrvIndex = textureManager_->Load(texturePath);
     }
 
     // ════════════════════════════════════════
-    // 描画単位はそのままコピーして持つ（GPU リソースではないので変換不要）
+    // 描画単位と階層はそのままコピーして持つ
+    //   どちらも GPU リソースではないので変換不要
+    //   modelData はこの関数を抜けると捨てられるので、ここで写しておく必要がある
     // ════════════════════════════════════════
     meshes_ = modelData.meshes;
+    nodes_ = modelData.nodes;
 }
 
 
@@ -97,7 +113,8 @@ void Model::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
 //   RootSignature / PSO / トポロジも呼び出し側が設定済みであること
 //   平行光源（b1）もシーン共通なので呼び出し側が設定済みであること
 // ════════════════════════════════════════════════════════════════════
-void Model::Draw(D3D12_GPU_VIRTUAL_ADDRESS transformationMatrixAddress) {
+void Model::Draw(D3D12_GPU_VIRTUAL_ADDRESS transformationMatrixAddress,
+    std::span<const uint32_t> meshIndices) {
 
     ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList().Get();
 
@@ -113,32 +130,52 @@ void Model::Draw(D3D12_GPU_VIRTUAL_ADDRESS transformationMatrixAddress) {
 
     // ────────────────────────────────────────
     // ② Mesh ごとに、マテリアルを切り替えて描く
+    //    meshIndices が空なら全部、指定があればその Mesh だけ
     // ────────────────────────────────────────
-    for (const Mesh& mesh : meshes_) {
-
-		const MaterialResource& material = materials_[mesh.materialIndex]; //　各メッシュに対応したマテリアルの情報を取得する
-
-        commandList->SetGraphicsRootConstantBufferView(
-            Object3dPipeline::kRootParameterMaterial,
-            material.resource->GetGPUVirtualAddress());  // シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
-        commandList->SetGraphicsRootDescriptorTable(
-            Object3dPipeline::kRootParameterTexture,
-            textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
-
-        // 描画！(DrawCall/ドローコール)
-        // インデックスを持っているモデル(球)と、持っていないモデル(obj)で呼ぶ関数が変わる
-        /*
-        第1引数：読むインデックスの数。6個 ÷ 3 = 三角形2枚 = 四角形1枚
-        第2引数：インスタンス数。同じ形を何体描くか。今は1体
-        第3引数：インデックスバッファの何番目から読むか。先頭からなので0
-        第4引数：インデックスの値に足すオフセット。頂点バッファの先頭から使うので0
-        第5引数：SV_InstanceID の開始番号。インスタンシングしないので0
-
-        */
-        if (mesh.indexCount > 0) {
-            commandList->DrawIndexedInstanced(mesh.indexCount, 1, mesh.startIndex, 0, 0);
-        } else {
-            commandList->DrawInstanced(mesh.vertexCount, 1, mesh.startVertex, 0);
+    if (meshIndices.empty()) {
+        for (const Mesh& mesh : meshes_) {
+            DrawMesh(mesh);
         }
+    } else {
+        for (const uint32_t meshIndex : meshIndices) {
+            DrawMesh(meshes_[meshIndex]);
+        }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Mesh 1つを描く
+//   頂点バッファ・インデックスバッファ・行列CB は Draw が設定済み
+// ════════════════════════════════════════════════════════════════════
+void Model::DrawMesh(const Mesh& mesh) {
+
+    ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList().Get();
+
+    const MaterialResource& material = materials_[mesh.materialIndex]; //　各メッシュに対応したマテリアルの情報を取得する
+
+    commandList->SetGraphicsRootConstantBufferView(
+        Object3dPipeline::kRootParameterMaterial,
+        material.resource->GetGPUVirtualAddress());  // シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
+    commandList->SetGraphicsRootDescriptorTable(
+        Object3dPipeline::kRootParameterTexture,
+        textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
+
+    // 描画！(DrawCall/ドローコール)
+    // インデックスを持っているモデル(球)と、持っていないモデル(obj)で呼ぶ関数が変わる
+    /*
+    第1引数：読むインデックスの数。6個 ÷ 3 = 三角形2枚 = 四角形1枚
+    第2引数：インスタンス数。同じ形を何体描くか。今は1体
+    第3引数：インデックスバッファの何番目から読むか
+    第4引数：インデックスの値に足すオフセット（BaseVertexLocation）
+            インデックスは Mesh ごとに 0 から始まるので、
+               その Mesh の先頭頂点の位置を GPU に足してもらう
+    第5引数：SV_InstanceID の開始番号。インスタンシングしないので0
+
+    */
+    if (mesh.indexCount > 0) {
+        commandList->DrawIndexedInstanced(
+            mesh.indexCount, 1, mesh.startIndex, mesh.startVertex, 0);
+    } else {
+        commandList->DrawInstanced(mesh.vertexCount, 1, mesh.startVertex, 0);
     }
 }

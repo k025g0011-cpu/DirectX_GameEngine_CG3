@@ -68,12 +68,16 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;$(ProjectDir)externals\assimp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
+      <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalDependencies>assimp-vc143-mtd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)externals\assimp\lib\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -96,11 +100,15 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;$(ProjectDir)externals\assimp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalDependencies>assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)externals\assimp\lib\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -123,7 +131,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)Engine\math;$(ProjectDir)Engine\base;$(ProjectDir)Engine\input;$(ProjectDir)Engine\3d;$(ProjectDir)Engine\2d;$(ProjectDir)Engine\loader;$(ProjectDir)Engine\audio;$(ProjectDir)Engine\scene;$(ProjectDir)Engine\editor;$(ProjectDir)Engine\components;$(ProjectDir)Engine;$(ProjectDir)Engine\asset;$(ProjectDir)externals\assimp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Disabled</Optimization>
       <WholeProgramOptimization>false</WholeProgramOptimization>
     </ClCompile>
@@ -131,6 +139,10 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <LinkTimeCodeGeneration />
+      <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <AdditionalDependencies>assimp-vc143-mt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(ProjectDir)externals\assimp\lib\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -181,7 +193,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\editor\Editor.cpp" />
     <ClCompile Include="Engine\editor\EditorLayout.cpp" />
     <ClCompile Include="Engine\input\Input.cpp" />
-    <ClCompile Include="Engine\loader\ObjLoader.cpp" />
+    <ClCompile Include="Engine\loader\AssimpLoader.cpp" />
     <ClCompile Include="Engine\loader\PrimitiveModel.cpp" />
     <ClCompile Include="Engine\math\MathUtility.cpp" />
     <ClCompile Include="Engine\scene\Component.cpp" />
@@ -300,7 +312,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\editor\Editor.h" />
     <ClInclude Include="Engine\editor\EditorLayout.h" />
     <ClInclude Include="Engine\input\Input.h" />
-    <ClInclude Include="Engine\loader\ObjLoader.h" />
+    <ClInclude Include="Engine\loader\AssimpLoader.h" />
     <ClInclude Include="Engine\loader\PrimitiveModel.h" />
     <ClInclude Include="Engine\math\MathUtility.h" />
     <ClInclude Include="Engine\math\Matrix4x4.h" />

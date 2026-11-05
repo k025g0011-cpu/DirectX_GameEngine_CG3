@@ -53,18 +53,17 @@ void GameScene::Initialize(const EngineContext& context) {
 	sphereObject_->GetTransform().translate = { -1.5f, 0.0f, 0.0f };
 	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
 
-	suzanneObject_ = CreateGameObject("Suzanne");
-	suzanneObject_->GetTransform().translate = { 1.5f, 0.0f, 0.0f };
-	suzanneObject_->AddComponent<MeshRenderer>(suzanneModel_);
 
+	//   モデルの階層をそのまま GameObject ツリーにする
+	//     ヒエラルキーを開くと、Blender で置いたオブジェクトが子として並ぶ
+	Model* testModel = context_.modelManager->Load("resources/parentBarrel.glb");
+
+	CreateObjectFromModel("parentTestBarrel", testModel);
 
 	// ════════════════════════════════════════
 	// パーティクル
 	//   他のオブジェクトと同じ3手順：箱を作る → 位置を決める → 機能を足す
 	// ════════════════════════════════════════
-	particleObject_ = CreateGameObject("Particles");
-	particleObject_->GetTransform().translate = { 0.0f, 2.0f, 0.0f };
-	particleObject_->AddComponent<ParticleEmitter>("resources/particle.png", 128);
 
 
 	// ════════════════════════════════════════
@@ -134,16 +133,6 @@ void GameScene::Initialize(const EngineContext& context) {
 	spotObject->GetTransform().translate = { 0.0f, 4.0f, 0.0f };
 	spotObject->GetTransform().rotate = { kPi / 2.0f, 0.0f, 0.0f };
 	spotObject->AddComponent<SpotLightComponent>();
-
-
-	//   複数ライトの確認用。色違いの点光源を2つ足す
-	GameObject* lampRed = CreateGameObject("Lamp_Red");
-	lampRed->GetTransform().translate = { -3.0f, 1.0f, 0.0f };
-	lampRed->AddComponent<PointLightComponent>();
-
-	GameObject* lampBlue = CreateGameObject("Lamp_Blue");
-	lampBlue->GetTransform().translate = { 3.0f, 1.0f, 0.0f };
-	lampBlue->AddComponent<PointLightComponent>();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -161,6 +150,77 @@ GameObject* GameScene::CreateGameObject(const std::string& name) {
 
 	return result;
 }
+
+// ════════════════════════════════════════════════════════════════════
+// モデルの階層を GameObject ツリーに展開する
+//   Blender で置いたオブジェクトが、そのままヒエラルキーに並ぶ
+// ════════════════════════════════════════════════════════════════════
+GameObject* GameScene::CreateObjectFromModel(const std::string& name, Model* model) {
+
+	// ────────────────────────────────────────────────────────────────
+	// 階層を持たないモデルは GameObject 1個で済ませる
+	//   PrimitiveModel が作った球などは nodes が空
+	//   MeshRenderer に Mesh を指定しなければ、モデル全体が描かれる
+	// ────────────────────────────────────────────────────────────────
+	if (model == nullptr || model->GetNodeCount() == 0) {
+		GameObject* object = CreateGameObject(name);
+		object->AddComponent<MeshRenderer>(model);
+		return object;
+	}
+
+	// ────────────────────────────────────────────────────────────────
+	// 階層があるときは、ルートノード（添字0）からたどる
+	// ────────────────────────────────────────────────────────────────
+	GameObject* root = BuildNodeObject(model, 0, nullptr);
+
+	//   ルートノードの名前は "RootNode" など機械的なものが入っている
+	//     ヒエラルキーで分かりやすいよう、呼び出し側が付けた名前に差し替える
+	root->SetName(name);
+
+	return root;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ノード1つを GameObject にして、子を再帰で作る
+// ════════════════════════════════════════════════════════════════════
+GameObject* GameScene::BuildNodeObject(Model* model, uint32_t nodeIndex, GameObject* parent) {
+
+	const ModelNode& node = model->GetNode(nodeIndex);
+
+	GameObject* object = CreateGameObject(node.name);
+	object->SetParent(parent);   // nullptr なら親なし
+
+	// ────────────────────────────────────────────────────────────────
+	// ノードの行列を Transform に移す
+	//   GameObject は行列ではなく scale/rotate/translate を持つので分解が必要
+	//   分解した値は、そのままインスペクタで編集できる
+	// ────────────────────────────────────────────────────────────────
+	object->GetTransform() = DecomposeAffineMatrix(node.localMatrix);
+
+	// ────────────────────────────────────────────────────────────────
+	// Mesh を持つノードだけ描画コンポーネントを足す
+	//   持たないノード（ルートや Blender のエンプティ）は変換だけの箱になる
+	// ────────────────────────────────────────────────────────────────
+	if (!node.meshIndices.empty()) {
+		MeshRenderer* renderer = object->AddComponent<MeshRenderer>(model);
+		renderer->SetMeshIndices(node.meshIndices);
+	}
+
+	// ────────────────────────────────────────────────────────────────
+	// 子を再帰で作る
+	//	　　ここで node への参照を持ち越して大丈夫な理由
+	//     伸びるのは gameObjects_（GameScene 側）で、model->nodes_ は変わらない
+	//     しかも gameObjects_ は unique_ptr の配列なので、
+	//     引っ越しても GameObject 本体は動かず、生ポインタは生き続ける
+	// ────────────────────────────────────────────────────────────────
+	for (const uint32_t childIndex : node.children) {
+		BuildNodeObject(model, childIndex, object);
+	}
+
+	return object;
+}
+
+
 
 // ════════════════════════════════════════════════════════════════════
 // 更新

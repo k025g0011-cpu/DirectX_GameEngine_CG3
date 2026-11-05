@@ -63,6 +63,8 @@ private:
 	void DrawViewPanel();
 	bool DrawViewImage(RenderTexture& renderTexture);
 	void DrawAssetPanel();
+	/// <summary>1オブジェクトとその子を再帰で描く</summary>
+	void DrawObjectNode(GameObject* object);
 
 	const EngineContext* context_ = nullptr;
 	Camera* gameCamera_ = nullptr;
@@ -75,7 +77,15 @@ private:
 	RenderTexture gameRenderTexture_;
 
 	bool isViewHovered_ = false;
-	int32_t selectedObjectIndex_ = -1;
+	// いま選んでいるオブジェクト（借りているだけ。所有権は Scene にある）
+	GameObject* selectedObject_ = nullptr;
+
+	// ドラッグで親子を変える予約
+	//   走査中に SetParent すると children_ が書き換わって壊れるので、
+	//   描き終わってから実行する（pendingChild_ が nullptr でなければ予約あり）
+	GameObject* pendingChild_ = nullptr;
+	GameObject* pendingParent_ = nullptr;
+
 
 	std::string selectedAssetPath_;   // 選択中アセット。添字ではなくパスで持つ
 	int32_t assetTypeFilter_ = 0;     // 0=すべて / 1=Model / 2=Texture / 3=Scene / 4=Audio

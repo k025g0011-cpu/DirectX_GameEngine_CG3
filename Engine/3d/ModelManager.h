@@ -22,7 +22,7 @@ class ModelManager {
 public:
 	void Initialize(DirectXCommon* dxCommon, TextureManager* textureManager);
 
-	/// <summary>obj ファイルを読み込む。既に読み込み済みなら再利用する</summary>
+	/// <summary>モデルファイルを読み込む。既に読み込み済みなら再利用する</summary>
 	/// <param name="filePath">"resources/suzanne.obj" のような、フォルダを含むパス</param>
 	/// <returns>Model へのポインタ。所有権は渡さない</returns>
 	Model* Load(const std::string& filePath);

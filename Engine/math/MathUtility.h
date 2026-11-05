@@ -128,6 +128,13 @@ Matrix4x4 MakeRotateZMatrix(float radian);
 // --- 3次元アフィン変換行列の作成 ---
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate);
 
+// --- アフィン変換行列を scale / rotate / translate に分解する ---
+//   MakeAffineMatrix の逆。rotate は XYZ 順のオイラー角
+//   ※ 完全には元に戻らない
+//     ・ジンバルロック（Y が ±90度付近）では x と z の分け方が一通りに決まらない
+//     ・鏡像（負のスケール）は長さからは判別できないので、正のスケールとして返る
+Transform DecomposeAffineMatrix(const Matrix4x4& matrix);
+
 // --- レンダリングパイプライン ---
 
 // 1. 透視投影行列の作成
@@ -147,4 +154,8 @@ Matrix4x4 MakeRotateXYZMatrix(const Vector3& rotation);
 
 // ベクトルを行列で変換（方向ベクトル用、w=0として扱う）
 Vector3 TransformNormal(const Vector3& vector, const Matrix4x4& matrix);
+
+// 点を行列で変換（位置ベクトル用、w=1として扱う）
+//   TransformNormal との違いは「平行移動成分を足すかどうか」だけ
+Vector3 TransformPoint(const Vector3& point, const Matrix4x4& matrix);
 

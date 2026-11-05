@@ -40,6 +40,15 @@ private:
 	/// <summary>GameObject を作ってシーンに登録し、そのポインタを返す</summary>
 	GameObject* CreateGameObject(const std::string& name);
 
+	/// <summary>モデルの階層を GameObject ツリーに展開し、根を返す</summary>
+	///   階層を持たないモデル（PrimitiveModel 製など）は GameObject 1個になる
+	GameObject* CreateObjectFromModel(const std::string& name, Model* model);
+
+	/// <summary>ノード1つを GameObject にして、子を再帰で作る</summary>
+	/// <param name="nodeIndex">Model::GetNode に渡す添字</param>
+	/// <param name="parent">親にする GameObject（根なら nullptr）</param>
+	GameObject* BuildNodeObject(Model* model, uint32_t nodeIndex, GameObject* parent);
+
 	/// <summary>シーンの中身を描く。描画先は呼び出し側が設定済み</summary>
 	void DrawScene(const CameraData& camera);
 

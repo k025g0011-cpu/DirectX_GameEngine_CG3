@@ -13,29 +13,23 @@
 namespace {
 	// 度 ⇔ ラジアンの変換。このファイルの中だけで使う
 	constexpr float kDegToRad = kPi / 180.0f;
-	constexpr float kRadToDeg = 180.0f / kPi;
 }
 
 // ════════════════════════════════════════════════════════════════════
 // LightComponent（共通部分）
 // ════════════════════════════════════════════════════════════════════
 Vector3 LightComponent::GetWorldPosition() const {
-	//   親子関係がまだ無いので、ローカル座標＝ワールド座標
-	return GetOwner()->GetTransform().translate;
+	//   親の変換まで含めた位置。行列の4行目が平行移動成分
+	const Matrix4x4 world = GetOwner()->GetWorldMatrix();
+	return Vector3{ world.m[3][0], world.m[3][1], world.m[3][2] };
 }
 
 Vector3 LightComponent::GetForward() const {
-	const Transform& transform = GetOwner()->GetTransform();
-
-	//   MakeAffineMatrix と同じ掛ける順番にすること
-	//     順番が違うと、Inspector の回転とライトの向きがずれる
-	const Matrix4x4 rotateMatrix =
-		MakeRotateXMatrix(transform.rotate.x) *
-		MakeRotateYMatrix(transform.rotate.y) *
-		MakeRotateZMatrix(transform.rotate.z);
-
-	//   ローカルの +Z を「正面」とする（Unity と同じ約束）
-	return Normalize(TransformNormal(Vector3{ 0.0f, 0.0f, 1.0f }, rotateMatrix));
+	//   親の回転まで含めた向き
+	//     ローカルの +Z を「正面」とする（Unity と同じ約束）
+	//     TransformNormal は平行移動を無視する（左上 3x3 だけ使う）
+	const Matrix4x4 world = GetOwner()->GetWorldMatrix();
+	return Normalize(TransformNormal(Vector3{ 0.0f, 0.0f, 1.0f }, world));
 }
 
 void LightComponent::DrawInspector() {

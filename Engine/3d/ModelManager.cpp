@@ -4,35 +4,8 @@
 
 #include "DirectXCommon.h"
 #include "TextureManager.h"
-#include "ObjLoader.h"
+#include "AssimpLoader.h"
 #include "Logger.h"
-
-// ════════════════════════════════════════════════════════════════════
-// このファイルの中だけで使う関数
-// ════════════════════════════════════════════════════════════════════
-namespace {
-
-	// ════════════════════════════════════════
-	// "resources/suzanne.obj" を
-	//   フォルダ名 "resources" と ファイル名 "suzanne.obj" に分ける
-	//   区切りが無ければフォルダ名は "."（カレント）にする
-	// ════════════════════════════════════════
-	void SplitPath(const std::string& filePath,
-		std::string& outDirectory, std::string& outFilename) {
-
-		// '/' と '\' のどちらでも区切れるようにする
-		size_t separatorPos = filePath.find_last_of("/\\");
-
-		if (separatorPos == std::string::npos) {
-			outDirectory = ".";
-			outFilename = filePath;
-		} else {
-			outDirectory = filePath.substr(0, separatorPos);
-			outFilename = filePath.substr(separatorPos + 1);
-		}
-	}
-
-}   // namespace
 
 // ════════════════════════════════════════════════════════════════════
 // 初期化
@@ -46,7 +19,7 @@ void ModelManager::Initialize(DirectXCommon* dxCommon, TextureManager* textureMa
 }
 
 // ════════════════════════════════════════════════════════════════════
-// obj ファイルを読み込む
+// モデルファイルを読み込む（.obj / .gltf / .glb）
 // ════════════════════════════════════════════════════════════════════
 Model* ModelManager::Load(const std::string& filePath) {
 
@@ -59,14 +32,7 @@ Model* ModelManager::Load(const std::string& filePath) {
 		}
 	}
 
-	// ────────────────────────────────────────
-	// ② パスを分解して obj を読む
-	// ────────────────────────────────────────
-	std::string directory;
-	std::string filename;
-	SplitPath(filePath, directory, filename);
-
-	ModelData modelData = ObjLoader::Load(directory, filename);
+	ModelData modelData = AssimpLoader::Load(filePath);
 
 	// ────────────────────────────────────────
 	// ③ Model を作って一覧に登録する
@@ -79,7 +45,13 @@ Model* ModelManager::Load(const std::string& filePath) {
 	Model* result = entry.model.get();           // 返す値を先に取っておく
 	models_.push_back(std::move(entry));         // unique_ptr はコピーできないので move
 
-	Log(dxCommon_->GetLogStream(), "Load model: " + filePath + "\n");
+	Log(dxCommon_->GetLogStream(),
+		"Load model: " + filePath
+		+ "  vertices=" + std::to_string(modelData.vertices.size())
+		+ "  indices=" + std::to_string(modelData.indices.size())
+		+ "  meshes=" + std::to_string(modelData.meshes.size())
+		+ "  materials=" + std::to_string(modelData.materials.size())
+		+ "\n");
 
 	return result;
 }

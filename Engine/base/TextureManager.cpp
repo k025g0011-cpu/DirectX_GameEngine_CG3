@@ -23,12 +23,38 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 	// ════════════════════════════════════════
+	// GenerateMips関数
+	// 読み込み済みの画像にミップマップを付ける
+	//   ファイルから読んでもメモリから読んでも、ここから先は同じ
+	// ════════════════════════════════════════
+	std::optional<DirectX::ScratchImage> GenerateMips(
+		DirectX::ScratchImage&& source, const std::string& name, std::ostream& logStream) {
+
+		DirectX::ScratchImage mipImages{};
+		HRESULT hr = DirectX::GenerateMipMaps(
+			source.GetImages(),
+			source.GetImageCount(),
+			source.GetMetadata(),
+			DirectX::TEX_FILTER_SRGB,
+			0,
+			mipImages);
+
+		// ミップ生成だけ失敗したときは、元の画像をそのまま使う（描けなくはない）
+		if (FAILED(hr)) {
+			Log(logStream, "Mipmap generation failed (using base image) : " + name + "\n");
+			return std::move(source);
+		}
+
+		return std::move(mipImages);
+	}
+
+	// ════════════════════════════════════════
 	// LoadTexture関数
 	// 画像ファイルを読み、ミップマップ付きのデータを CPU 側(RAM)に作る
 	// ════════════════════════════════════════
 	std::optional<DirectX::ScratchImage> LoadTexture(
 		const std::string& filePath, std::ostream& logStream) {
-		// テクスチャファイルを読んでプログラムで扱えるようにする
+
 		DirectX::ScratchImage scratchImage{};
 		std::wstring filePathW = ConvertString(filePath);
 		HRESULT hr = DirectX::LoadFromWICFile(
@@ -38,25 +64,28 @@ namespace {
 			Log(logStream, "Texture load failed : " + filePath + "\n");
 			return std::nullopt;
 		}
-		// ミップマップの作成
-		DirectX::ScratchImage mipImages{};
-		hr = DirectX::GenerateMipMaps(
-			scratchImage.GetImages(),
-			scratchImage.GetImageCount(),
-			scratchImage.GetMetadata(),
-			DirectX::TEX_FILTER_SRGB,
-			0,
-			mipImages);
 
-		// ミップ生成だけ失敗したときは、元の画像をそのまま使う（描けなくはない）
+		return GenerateMips(std::move(scratchImage), filePath, logStream);
+	}
+
+	// ════════════════════════════════════════
+	// LoadTextureFromMemory関数
+	// メモリ上の画像（png / jpg のバイト列）を読む
+	//   .glb のように、モデルファイルに画像が埋め込まれている場合に使う
+	// ════════════════════════════════════════
+	std::optional<DirectX::ScratchImage> LoadTextureFromMemory(
+		const void* data, size_t size, const std::string& name, std::ostream& logStream) {
+
+		DirectX::ScratchImage scratchImage{};
+		HRESULT hr = DirectX::LoadFromWICMemory(
+			data, size, DirectX::WIC_FLAGS_FORCE_SRGB, nullptr, scratchImage);
+
 		if (FAILED(hr)) {
-			Log(logStream, "Mipmap generation failed (using base image) : " + filePath + "\n");
-			return std::move(scratchImage);
+			Log(logStream, "Embedded texture load failed : " + name + "\n");
+			return std::nullopt;
 		}
 
-		// ミップマップ付きのデータを返す
-		return std::move(mipImages);
-
+		return GenerateMips(std::move(scratchImage), name, logStream);
 	}
 
 	// ════════════════════════════════════════
@@ -249,18 +278,44 @@ uint32_t TextureManager::CreateDummyTexture() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// テクスチャを読み込んで、SRV ヒープ上の番号を返す
-//   ※ 中で ExecuteAndWait するので、描画コマンドを積んでいる最中は呼ばないこと
+// キャッシュを探す
 // ════════════════════════════════════════════════════════════════════
+std::optional<uint32_t> TextureManager::FindCached(const std::string& key) const {
+
+	for (const TextureData& texture : textures_) {
+		if (texture.key == key) {
+			return texture.srvIndex;
+		}
+	}
+	return std::nullopt;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CPU 上の画像を GPU に載せ、一覧に登録する
+// ════════════════════════════════════════════════════════════════════
+uint32_t TextureManager::RegisterTexture(
+	const std::string& key, const DirectX::ScratchImage& mipImages) {
+
+	// VRAM 上にテクスチャを作り、SRV を張る
+	CreatedTexture created = CreateTextureAndSrv(mipImages, dxCommon_);
+
+	// 一覧に登録する（resource を保持しないと VRAM から消えてしまう）
+	TextureData textureData{};
+	textureData.key = key;
+	textureData.resource = created.resource;
+	textureData.srvIndex = created.srvIndex;
+	textures_.push_back(textureData);
+
+	return created.srvIndex;
+}
+
 uint32_t TextureManager::Load(const std::string& filePath) {
 
 	// ────────────────────────────────────────────────────────────────
 	// ① 既に読み込み済みなら、その番号をそのまま返す
 	// ────────────────────────────────────────────────────────────────
-	for (const TextureData& texture : textures_) {
-		if (texture.filePath == filePath) {
-			return texture.srvIndex;
-		}
+	if (std::optional<uint32_t> cached = FindCached(filePath)) {
+		return *cached;
 	}
 
 	// ────────────────────────────────────────────────────────────────
@@ -268,32 +323,53 @@ uint32_t TextureManager::Load(const std::string& filePath) {
 	//     失敗したらダミーを返す。失敗はキャッシュしないので、
 	//     後からファイルを置いて読み直せば直る
 	// ────────────────────────────────────────────────────────────────
-	std::optional<DirectX::ScratchImage> mipImages = LoadTexture(filePath, dxCommon_->GetLogStream());
+	std::optional<DirectX::ScratchImage> mipImages =
+		LoadTexture(filePath, dxCommon_->GetLogStream());
 
 	if (!mipImages.has_value()) {
 		return dummySrvIndex_;
 	}
 
 	// ────────────────────────────────────────────────────────────────
-	// ③ VRAM 上にテクスチャを作り、SRV を張る
+	// ③ GPU に載せて一覧に登録する
 	// ────────────────────────────────────────────────────────────────
-	CreatedTexture created = CreateTextureAndSrv(*mipImages, dxCommon_);
-
-	// ────────────────────────────────────────────────────────────────
-	// ④ 一覧に登録する（resource を保持しないと VRAM から消えてしまう）
-	// ────────────────────────────────────────────────────────────────
-	TextureData textureData{};
-	textureData.filePath = filePath;
-	textureData.resource = created.resource;
-	textureData.srvIndex = created.srvIndex;
-	textures_.push_back(textureData);
+	const uint32_t srvIndex = RegisterTexture(filePath, *mipImages);
 
 	Log(dxCommon_->GetLogStream(), "Load texture: " + filePath + "\n");
 
-	return created.srvIndex;
-	
+	return srvIndex;
 }
 
+// ════════════════════════════════════════════════════════════════════
+// メモリ上の画像を読み込んで、SRV ヒープ上の番号を返す
+//   .glb のように、画像がモデルファイルに埋め込まれている場合に使う
+//   ※ 中で ExecuteAndWait するので、描画コマンドを積んでいる最中は呼ばないこと
+// ════════════════════════════════════════════════════════════════════
+uint32_t TextureManager::LoadFromMemory(
+	const std::string& name, const void* data, size_t size) {
+
+	assert(data != nullptr && size > 0);
+
+	// ① 既に読み込み済みなら、その番号をそのまま返す
+	if (std::optional<uint32_t> cached = FindCached(name)) {
+		return *cached;
+	}
+
+	// ② メモリ上の画像を読み込む
+	std::optional<DirectX::ScratchImage> mipImages =
+		LoadTextureFromMemory(data, size, name, dxCommon_->GetLogStream());
+
+	if (!mipImages.has_value()) {
+		return dummySrvIndex_;
+	}
+
+	// ③ GPU に載せて一覧に登録する
+	const uint32_t srvIndex = RegisterTexture(name, *mipImages);
+
+	Log(dxCommon_->GetLogStream(), "Load texture (embedded): " + name + "\n");
+
+	return srvIndex;
+}
 // ════════════════════════════════════════════════════════════════════
 // SRV 番号から GPU ハンドルを得る
 // ════════════════════════════════════════════════════════════════════

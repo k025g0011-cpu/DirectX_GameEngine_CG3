@@ -77,10 +77,11 @@ void MeshRenderer::Draw(const CameraData& camera) {
 	//   法線用。非均等スケールでも法線が正しい向きを保つ
 	transformationMatrixData_->WorldInverseTranspose = Transpose(Inverse(worldMatrix));
 	// ────────────────────────────────────────────────────────────────
-	// ③ Model に「この行列で描いて」と頼む
+	// ③ Model に「この行列で、この Mesh を描いて」と頼む
 	//    頂点・マテリアル・テクスチャの設定は Model 側がやる
+	//    meshIndices_ が空なら Model 側が全部描く
 	// ────────────────────────────────────────────────────────────────
-	model_->Draw(transformationMatrixResource_->GetGPUVirtualAddress());
+	model_->Draw(transformationMatrixResource_->GetGPUVirtualAddress(), meshIndices_);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -89,8 +90,8 @@ void MeshRenderer::Draw(const CameraData& camera) {
 void MeshRenderer::DrawInspector() {
 #ifdef USE_IMGUI
 	// ════════════════════════════════════════
-// モデル欄（ここにアセットパネルから落とせる）  ★D-5
-// ════════════════════════════════════════
+	// モデル欄（ここにアセットパネルから落とせる）  
+	// ════════════════════════════════════════
 	ImGui::TextDisabled("モデル");
 
 	// 表示文字はパス。コードから直接 Model* を渡された場合はパスが無い
@@ -126,29 +127,90 @@ void MeshRenderer::DrawInspector() {
 
 	ImGui::Text("meshes    : %u", model_->GetMeshCount());
 	ImGui::Text("materials : %u", model_->GetMaterialCount());
+	ImGui::Text("nodes     : %u", model_->GetNodeCount());
+
+	//   どの Mesh を担当しているか（空＝モデル全体）
+	if (meshIndices_.empty()) {
+		ImGui::Text("draw      : all");
+	} else {
+		std::string list;
+		for (const uint32_t meshIndex : meshIndices_) {
+			if (!list.empty()) {
+				list += ", ";
+			}
+			list += std::to_string(meshIndex);
+		}
+		ImGui::Text("draw      : %s", list.c_str());
+	}
+
+	ImGui::Separator();
+	ImGui::TextDisabled("マテリアル（Model 共有）");
+
+	// ────────────────────────────────────────────────────────────────
+	// このオブジェクトが実際に描くマテリアルかどうかを判定する
+	//   Model は全マテリアルを持つが、このオブジェクトは担当 Mesh ぶんしか描かない
+	//   使わないマテリアルを動かしても見た目が変わらないので、見分けが付くようにする
+	// ────────────────────────────────────────────────────────────────
+	const auto isUsedByThisObject = [this](uint32_t materialIndex) {
+
+		//   Mesh を絞っていない＝モデル全体を描くので、全マテリアルが対象
+		if (meshIndices_.empty()) {
+			return true;
+		}
+
+		for (const uint32_t meshIndex : meshIndices_) {
+			if (model_->GetMeshMaterialIndex(meshIndex) == materialIndex) {
+				return true;
+			}
+		}
+		return false;
+		};
 
 	// マテリアルは Model（共有データ）側にあるので、
 	//    ここを変えると「同じモデルを使っている全オブジェクト」に反映される
 	for (uint32_t i = 0; i < model_->GetMaterialCount(); ++i) {
 		ImGui::PushID(static_cast<int>(i));
 
-		Material* material = model_->GetMaterialData(i);
+		const bool used = isUsedByThisObject(i);
 
-		ImGui::ColorEdit4("color", &material->color.x);
-		ImGui::DragFloat("光沢度", &material->shininess, 0.5f, 0.0f, 200.0f, "%.1f");
-		//   ImGui は C のライブラリなので int* しか受け取れない
-		//     enum class ⇔ int の変換は、この境界だけで行う
-		int32_t model = static_cast<int32_t>(material->specularModel);
-		if (ImGui::Combo("鏡面反射モデル", &model, "Phong\0Blinn-Phong\0")) {
-			material->specularModel = static_cast<SpecularModel>(model);
+		//   見出しは「[番号] 名前」。名前が無いモデルもあるので代替を用意する
+		const std::string& materialName = model_->GetMaterialName(i);
+		const std::string header =
+			"[" + std::to_string(i) + "] "
+			+ (materialName.empty() ? std::string("(名前なし)") : materialName)
+			+ (used ? "" : "   - このオブジェクトでは未使用");
+
+		//   使うものだけ開いた状態で出す。使わないものは閉じて灰色にする
+		if (!used) {
+			ImGui::PushStyleColor(ImGuiCol_Text,
+				ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 		}
-		//   ハイライトの色。白＝非金属、色付き＝金属 など
-		ImGui::ColorEdit3("鏡面反射色", &material->specularColor.x);
+		const bool opened = ImGui::CollapsingHeader(header.c_str(),
+			used ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+		if (!used) {
+			ImGui::PopStyleColor();   // Push したぶんだけ必ず Pop する
+		}
 
-		// ライティングの ON/OFF（int32_t なので bool を経由する）
-		bool enableLighting = (material->enableLighting != 0);
-		if (ImGui::Checkbox("ライティング", &enableLighting)) {
-			material->enableLighting = enableLighting ? 1 : 0;
+		if (opened) {
+			Material* material = model_->GetMaterialData(i);
+
+			ImGui::ColorEdit4("color", &material->color.x);
+			//   上限は Ns の実値に合わせる。barrel は 413 なので 200 だと切り捨てられていた
+			ImGui::DragFloat("光沢度", &material->shininess, 1.0f, 0.0f, 1000.0f, "%.1f");
+			//   ImGui は C のライブラリなので int* しか受け取れない
+			//     enum class ⇔ int の変換は、この境界だけで行う
+			int32_t specularModel = static_cast<int32_t>(material->specularModel);
+			if (ImGui::Combo("鏡面反射モデル", &specularModel, "Phong\0Blinn-Phong\0")) {
+				material->specularModel = static_cast<SpecularModel>(specularModel);
+			}
+			//   ハイライトの色。白＝非金属、色付き＝金属 など
+			ImGui::ColorEdit3("鏡面反射色", &material->specularColor.x);
+
+			// ライティングの ON/OFF（int32_t なので bool を経由する）
+			bool enableLighting = (material->enableLighting != 0);
+			if (ImGui::Checkbox("ライティング", &enableLighting)) {
+				material->enableLighting = enableLighting ? 1 : 0;
+			}
 		}
 
 		ImGui::PopID();
