@@ -7,7 +7,7 @@ on:
       - master
 
 # 任意のタイミングで手動実行できるようにする（Actions ページにボタンが出る）
-workflow_dispatch:
+  workflow_dispatch:
 
 # 複数の step をまたいで使う値をここにまとめる
 env:
