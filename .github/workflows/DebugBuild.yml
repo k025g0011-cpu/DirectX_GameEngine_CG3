@@ -1,0 +1,37 @@
+name: DebugBuild
+
+# ワークフローの発動条件
+on:
+  push:
+    branches:
+      - master
+
+# 任意のタイミングで手動実行できるようにする（Actions ページにボタンが出る）
+workflow_dispatch:
+
+# 複数の step をまたいで使う値をここにまとめる
+env:
+  # リポジトリのルートディレクトリを基点としたソリューションファイルのパス
+  SOLUTION_FILE_PATH: project/DirectX_GameEngine.slnx
+  # Visual Studio の構成（Debug / Release）
+  CONFIGURATION: Debug
+
+jobs:
+  build:
+    # ジョブを実行するマシンの種類
+    runs-on: windows-2025-vs2026
+     
+    steps:
+      # リポジトリをマシン上に取り出す
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # msbuild コマンドを使えるようにする
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
+        with:
+          msbuild-architecture: x64
+
+      # ビルド本体
+      - name: Build
+        run: msbuild ${{env.SOLUTION_FILE_PATH}} /p:Platform=x64,Configuration=${{env.CONFIGURATION}}
