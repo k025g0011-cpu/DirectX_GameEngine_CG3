@@ -19,8 +19,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include=".editorconfig" />
-    <None Include="Object3d.hlsli" />
-    <None Include="Particle.hlsli" />
+    <None Include="shaders\Particle.hlsli" />
+    <None Include="shaders\Object3d.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="externals\imgui\imgui.cpp">
@@ -143,14 +143,6 @@
     <ClCompile Include="Engine\loader\AssimpLoader.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="Object3d.VS.hlsl" />
-    <FxCompile Include="Object3d.PS.hlsl" />
-    <FxCompile Include="Line.VS.hlsl" />
-    <FxCompile Include="Line.PS.hlsl" />
-    <FxCompile Include="Particle.VS.hlsl" />
-    <FxCompile Include="Particle.PS.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="externals\imgui\imconfig.h">
@@ -305,5 +297,13 @@
     <Text Include="externals\imgui\LICENSE.txt">
       <Filter>imgui</Filter>
     </Text>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="shaders\Particle.VS.hlsl" />
+    <FxCompile Include="shaders\Particle.PS.hlsl" />
+    <FxCompile Include="shaders\Object3d.VS.hlsl" />
+    <FxCompile Include="shaders\Object3d.PS.hlsl" />
+    <FxCompile Include="shaders\Line.VS.hlsl" />
+    <FxCompile Include="shaders\Line.PS.hlsl" />
   </ItemGroup>
 </Project>

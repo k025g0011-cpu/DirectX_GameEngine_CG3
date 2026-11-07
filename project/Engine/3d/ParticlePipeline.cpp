@@ -176,11 +176,11 @@ void ParticlePipeline::CreatePipelineStates() {
 	// シェーダーのコンパイル（ここが Object3d との唯一の実質的な違い）
 	// ────────────────────────────────────────────────────────────────
 	ComPtr<IDxcBlob> vertexShaderBlob =
-		dxCommon_->CompileShader(L"Particle.VS.hlsl", L"vs_6_0");
+		dxCommon_->CompileShader(L"shaders/Particle.VS.hlsl", L"vs_6_0");
 	assert(vertexShaderBlob != nullptr);
 
 	ComPtr<IDxcBlob> pixelShaderBlob =
-		dxCommon_->CompileShader(L"Particle.PS.hlsl", L"ps_6_0");
+		dxCommon_->CompileShader(L"shaders/Particle.PS.hlsl", L"ps_6_0");
 	assert(pixelShaderBlob != nullptr);
 
 	// ────────────────────────────────────────────────────────────────
@@ -221,14 +221,27 @@ void ParticlePipeline::CreatePipelineStates() {
 
 // ════════════════════════════════════════════════════════════════════
 // パイプラインをコマンドリストに設定する
+//   描画コマンドを積む前に、1フレームに必要な回数だけ呼ぶ
 // ════════════════════════════════════════════════════════════════════
 void ParticlePipeline::SetPipeline(BlendMode blendMode) {
 
-	assert(blendMode < BlendMode::kMaxCount);
+	// ────────────────────────────────────────────────────────────────
+	// 添字に使う前に、添字そのものを範囲で確かめる
+	//   enum class でも中身はただの整数で、static_cast すれば範囲外の値も作れる
+	//   assert は Release で消えるので、実際の防御は if のほうが担う
+	// ────────────────────────────────────────────────────────────────
+	const uint32_t index = static_cast<uint32_t>(blendMode);
+	const uint32_t count = static_cast<uint32_t>(BlendMode::kMaxCount);
+
+	assert(index < count);
+
+	if (index >= count) {
+		return;   // 不正な値では何も設定しない
+	}
 
 	ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList().Get();
 
 	commandList->SetGraphicsRootSignature(rootSignature_.Get());
-	commandList->SetPipelineState(pipelineStates_[static_cast<uint32_t>(blendMode)].Get());
+	commandList->SetPipelineState(pipelineStates_[index].Get());
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

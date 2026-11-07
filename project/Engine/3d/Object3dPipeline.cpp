@@ -251,11 +251,11 @@ void Object3dPipeline::CreatePipelineStates() {
 	//   ループの外で1回だけ。6個の PSO が同じバイナリを共有する
 	// ────────────────────────────────────────────────────────────────
 	ComPtr<IDxcBlob> vertexShaderBlob =
-		dxCommon_->CompileShader(L"Object3d.VS.hlsl", L"vs_6_0");
+		dxCommon_->CompileShader(L"shaders/Object3d.VS.hlsl", L"vs_6_0");
 	assert(vertexShaderBlob != nullptr);
 
 	ComPtr<IDxcBlob> pixelShaderBlob =
-		dxCommon_->CompileShader(L"Object3d.PS.hlsl", L"ps_6_0");
+		dxCommon_->CompileShader(L"shaders/Object3d.PS.hlsl", L"ps_6_0");
 	assert(pixelShaderBlob != nullptr);
 
 	// ────────────────────────────────────────────────────────────────
@@ -302,11 +302,23 @@ void Object3dPipeline::CreatePipelineStates() {
 // ════════════════════════════════════════════════════════════════════
 void Object3dPipeline::SetPipeline(BlendMode blendMode) {
 
-	assert(blendMode < BlendMode::kMaxCount);
+	// ────────────────────────────────────────────────────────────────
+	// 添字に使う前に、添字そのものを範囲で確かめる
+	//   enum class でも中身はただの整数で、static_cast すれば範囲外の値も作れる
+	//   assert は Release で消えるので、実際の防御は if のほうが担う
+	// ────────────────────────────────────────────────────────────────
+	const uint32_t index = static_cast<uint32_t>(blendMode);
+	const uint32_t count = static_cast<uint32_t>(BlendMode::kMaxCount);
+
+	assert(index < count);
+
+	if (index >= count) {
+		return;   // 不正な値では何も設定しない
+	}
 
 	ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList().Get();
 
 	commandList->SetGraphicsRootSignature(rootSignature_.Get());
-	commandList->SetPipelineState(pipelineStates_[static_cast<uint32_t>(blendMode)].Get());
+	commandList->SetPipelineState(pipelineStates_[index].Get());
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 }

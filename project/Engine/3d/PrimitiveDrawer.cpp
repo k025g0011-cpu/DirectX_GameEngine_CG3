@@ -97,11 +97,11 @@ void PrimitiveDrawer::Initialize(DirectXCommon* dxCommon) {
     // ⑥ シェーダーをコンパイル
     // ────────────────────────────────────────────────────────────────
     Microsoft::WRL::ComPtr<IDxcBlob> vertexShaderBlob =
-        dxCommon_->CompileShader(L"Line.VS.hlsl", L"vs_6_0");
+        dxCommon_->CompileShader(L"shaders/Line.VS.hlsl", L"vs_6_0");
     assert(vertexShaderBlob != nullptr);
 
     Microsoft::WRL::ComPtr<IDxcBlob> pixelShaderBlob =
-        dxCommon_->CompileShader(L"Line.PS.hlsl", L"ps_6_0");
+        dxCommon_->CompileShader(L"shaders/Line.PS.hlsl", L"ps_6_0");
     assert(pixelShaderBlob != nullptr);
 
     // ────────────────────────────────────────────────────────────────

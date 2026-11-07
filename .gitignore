@@ -372,10 +372,8 @@ Dumps/
 
 imgui.ini
 
-# （*.obj で除外されているVisual Studioの中間ファイルとは別物）
-!resources/**/*.obj
-
 !project/externals/assimp/lib/[Dd]ebug/
 !project/externals/assimp/lib/[Rr]elease/
 
+# （*.obj で除外されているVisual Studioの中間ファイルとは別物）
 !project/resources/**/*.obj
