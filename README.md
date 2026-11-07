@@ -1,6 +1,6 @@
 # DirectX_GameEngine_CG3
 
-C++ / DirectX 12 で製作中の自作ゲームエンジン。
+C++ / DirectX 12 で製作中の自作ゲームエンジンです。
 
 ## workflow status badge
 
