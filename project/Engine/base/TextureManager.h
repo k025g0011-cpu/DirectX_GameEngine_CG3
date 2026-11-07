@@ -7,6 +7,10 @@
 #include <wrl.h>
 #include <optional>
 
+//   解像度を返すのに Vector2 だけ使う。MathUtility.h ごと取り込むと
+//   行列まで付いてきて、このヘッダを使う全ファイルに広がる
+#include "Vector2.h"
+
 // 前方宣言
 class DirectXCommon;
 
@@ -46,6 +50,12 @@ public:
 	/// <summary>読み込んだテクスチャの枚数（ImGui 表示用）</summary>
 	uint32_t GetTextureCount() const { return static_cast<uint32_t>(textures_.size()); }
 
+	/// <summary>元画像の解像度（ピクセル）</summary>
+	///   ピクセル指定の切り出し範囲を UV（0〜1）に直すのに使う
+	/// <param name="srvIndex">Load が返した番号</param>
+	/// <returns>見つからなければ 1×1（0 除算を避けるため）</returns>
+	Vector2 GetTextureSize(uint32_t srvIndex) const;
+
 private:
 	// 1枚のテクスチャが持つ情報
 	struct TextureData {
@@ -56,6 +66,10 @@ private:
 		Microsoft::WRL::ComPtr<ID3D12Resource> resource;
 		// SRV ヒープの何番に置いたか
 		uint32_t srvIndex = 0;
+
+		// 元画像の解像度（ピクセル）。切り出し範囲の計算に使う
+		uint32_t width = 1;
+		uint32_t height = 1;
 	};
 
 	/// <summary>　1x1のマゼンタ画像を使って SRV を張る。Initialize から1回だけ呼ぶ　</summary>

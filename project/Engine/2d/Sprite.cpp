@@ -17,8 +17,11 @@ void Sprite::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
 
 	dxCommon_ = dxCommon;
 	textureManager_ = textureManager;
-	textureSrvIndex_ = textureSrvIndex;
 	size_ = size;
+
+	//   解像度の取得に textureManager_ を使うので、設定した後に呼ぶ
+	//   切り出し範囲は画像全体になる（＝これまでと同じ見た目）
+	SetTextureIndex(textureSrvIndex);
 
 	// ════════════════════════════════════════
 	// 頂点バッファ（4頂点）
@@ -87,6 +90,35 @@ void Sprite::Initialize(DirectXCommon* dxCommon, TextureManager* textureManager,
 }
 
 // ════════════════════════════════════════════════════════════════════
+// 貼るテクスチャを差し替える
+//   解像度が変わるので、切り出し範囲は画像全体に戻す
+//   （前の画像向けの矩形を残すと、意味のない範囲を指すことになる）
+// ════════════════════════════════════════════════════════════════════
+void Sprite::SetTextureIndex(uint32_t textureSrvIndex) {
+
+	textureSrvIndex_ = textureSrvIndex;
+	textureResolution_ = textureManager_->GetTextureSize(textureSrvIndex_);
+
+	ResetTextureRect();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 切り出す矩形を指定する（ピクセル）
+// ════════════════════════════════════════════════════════════════════
+void Sprite::SetTextureRect(const Vector2& leftTop, const Vector2& size) {
+	textureRectLeftTop_ = leftTop;
+	textureRectSize_ = size;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// 切り出し範囲を画像全体に戻す
+// ════════════════════════════════════════════════════════════════════
+void Sprite::ResetTextureRect() {
+	textureRectLeftTop_ = { 0.0f, 0.0f };
+	textureRectSize_ = textureResolution_;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // 4頂点を作り直す
 //   size_ と anchorPoint_ から、四角形の四隅の座標を求める
 // ════════════════════════════════════════════════════════════════════
@@ -108,23 +140,37 @@ void Sprite::UpdateVertices() {
 
 	// 画面はY下向きなので、bottom のほうが top より値が大きい
 
+	// ────────────────────────────────────────
+	// 切り出し範囲（ピクセル）を UV（0〜1）に直す
+	//
+	//   元画像 256x256 のうち (64, 32) から 32x32 を切り出す場合
+	//     texLeft  = 64 / 256       = 0.25
+	//     texRight = (64+32) / 256  = 0.375
+	//
+	//   textureResolution_ は 1 以上が保証されている（TextureManager が 0 を返さない）
+	// ────────────────────────────────────────
+	const float texLeft = textureRectLeftTop_.x / textureResolution_.x;
+	const float texRight = (textureRectLeftTop_.x + textureRectSize_.x) / textureResolution_.x;
+	const float texTop = textureRectLeftTop_.y / textureResolution_.y;
+	const float texBottom = (textureRectLeftTop_.y + textureRectSize_.y) / textureResolution_.y;
+
 	// 法線は画面手前向き。ライティングしないので実際には使われない
 	const Vector3 kNormal = { 0.0f, 0.0f, -1.0f };
 
 	vertexData_[0].position = { left,  bottom, 0.0f };   // 左下
-	vertexData_[0].texcoord = { 0.0f, 1.0f };
+	vertexData_[0].texcoord = { texLeft,  texBottom };
 	vertexData_[0].normal = kNormal;
 
 	vertexData_[1].position = { left,  top,    0.0f };   // 左上
-	vertexData_[1].texcoord = { 0.0f, 0.0f };
+	vertexData_[1].texcoord = { texLeft,  texTop };
 	vertexData_[1].normal = kNormal;
 
 	vertexData_[2].position = { right, bottom, 0.0f };   // 右下
-	vertexData_[2].texcoord = { 1.0f, 1.0f };
+	vertexData_[2].texcoord = { texRight, texBottom };
 	vertexData_[2].normal = kNormal;
 
 	vertexData_[3].position = { right, top,    0.0f };   // 右上
-	vertexData_[3].texcoord = { 1.0f, 0.0f };
+	vertexData_[3].texcoord = { texRight, texTop };
 	vertexData_[3].normal = kNormal;
 }
 

@@ -299,11 +299,16 @@ uint32_t TextureManager::RegisterTexture(
 	// VRAM 上にテクスチャを作り、SRV を張る
 	CreatedTexture created = CreateTextureAndSrv(mipImages, dxCommon_);
 
+	//   解像度はミップ0段目（元の大きさ）のもの
+	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
+
 	// 一覧に登録する（resource を保持しないと VRAM から消えてしまう）
 	TextureData textureData{};
 	textureData.key = key;
 	textureData.resource = created.resource;
 	textureData.srvIndex = created.srvIndex;
+	textureData.width = static_cast<uint32_t>(metadata.width);
+	textureData.height = static_cast<uint32_t>(metadata.height);
 	textures_.push_back(textureData);
 
 	return created.srvIndex;
@@ -375,4 +380,24 @@ uint32_t TextureManager::LoadFromMemory(
 // ════════════════════════════════════════════════════════════════════
 D3D12_GPU_DESCRIPTOR_HANDLE TextureManager::GetSrvGpuHandle(uint32_t srvIndex) const {
 	return dxCommon_->GetSrvGpuDescriptorHandle(srvIndex);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SRV 番号から元画像の解像度を得る
+//   textures_ は srvIndex 順とは限らないので、線形に探す
+//   枚数は多くても数十なので、毎フレーム呼んでも問題にならない
+// ════════════════════════════════════════════════════════════════════
+Vector2 TextureManager::GetTextureSize(uint32_t srvIndex) const {
+
+	for (const TextureData& texture : textures_) {
+		if (texture.srvIndex == srvIndex) {
+			return Vector2{
+				static_cast<float>(texture.width),
+				static_cast<float>(texture.height) };
+		}
+	}
+
+	//   見つからない＝ダミーテクスチャか、登録されていない番号
+	//     0 を返すと UV 計算で 0 除算になるので、1×1 として扱う
+	return Vector2{ 1.0f, 1.0f };
 }

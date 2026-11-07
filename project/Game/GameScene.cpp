@@ -513,9 +513,37 @@ void GameScene::DrawSettingsPanel() {
 		if (ImGui::DragFloat2("sprite anchor", &spriteAnchor.x, 0.01f, 0.0f, 1.0f)) {
 			sprite_.SetAnchorPoint(spriteAnchor);
 		}
+
 		ImGui::DragFloat2("SpriteUVTranslate", &uvTransformSprite_.translate.x, 0.01f, -10.0f, 10.0f);
 		ImGui::DragFloat2("SpriteUVScale", &uvTransformSprite_.scale.x, 0.01f, -10.0f, 10.0f);
 		ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite_.rotate.z);
+
+		// ───── テクスチャの切り出し（ピクセル指定） ─────
+		ImGui::Separator();
+		const Vector2 textureResolution = sprite_.GetTextureResolution();
+		ImGui::TextDisabled("切り出し（元画像 %.0f x %.0f）",
+			textureResolution.x, textureResolution.y);
+
+		Vector2 rectLeftTop = sprite_.GetTextureRectLeftTop();
+		Vector2 rectSize = sprite_.GetTextureRectSize();
+
+		//   どちらを動かしても反映したいので、|| ではなく | で両方評価する
+		//   || だと左の DragFloat2 が true のとき右が描かれなくなる
+		bool rectChanged = false;
+		rectChanged |= ImGui::DragFloat2("切り出し 左上", &rectLeftTop.x, 1.0f, 0.0f, 0.0f, "%.0f");
+		rectChanged |= ImGui::DragFloat2("切り出し サイズ", &rectSize.x, 1.0f, 0.0f, 0.0f, "%.0f");
+
+		if (rectChanged) {
+			sprite_.SetTextureRect(rectLeftTop, rectSize);
+		}
+
+		if (ImGui::Button("画像全体に戻す")) {
+			sprite_.ResetTextureRect();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("表示サイズを切り出しに合わせる")) {
+			sprite_.AdjustTextureSize();
+		}
 
 	}
 	editor_.EndPanel();

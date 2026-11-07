@@ -54,8 +54,31 @@ public:
 	// ────────────────────────────────────────────────────────────────
 	// 見た目
 	// ────────────────────────────────────────────────────────────────
-	void SetTextureIndex(uint32_t textureSrvIndex) { textureSrvIndex_ = textureSrvIndex; }
+	/// <summary>貼るテクスチャを差し替える。切り出し範囲は画像全体に戻る</summary>
+	void SetTextureIndex(uint32_t textureSrvIndex);
 	uint32_t GetTextureIndex() const { return textureSrvIndex_; }
+
+	// ────────────────────────────────────────────────────────────────
+	// テクスチャの切り出し（ピクセル指定）
+	//   1枚の画像から一部分だけを貼る。アニメやアトラスに使う
+	// ────────────────────────────────────────────────────────────────
+
+	/// <summary>切り出す矩形を指定する（単位はピクセル）</summary>
+	/// <param name="leftTop">元画像の左上からの位置</param>
+	/// <param name="size">切り出す大きさ</param>
+	void SetTextureRect(const Vector2& leftTop, const Vector2& size);
+
+	/// <summary>切り出し範囲を画像全体に戻す</summary>
+	void ResetTextureRect();
+
+	/// <summary>スプライトの表示サイズを、切り出しサイズに合わせる</summary>
+	void AdjustTextureSize() { size_ = textureRectSize_; }
+
+	const Vector2& GetTextureRectLeftTop() const { return textureRectLeftTop_; }
+	const Vector2& GetTextureRectSize() const { return textureRectSize_; }
+
+	/// <summary>元画像の解像度（ピクセル）</summary>
+	const Vector2& GetTextureResolution() const { return textureResolution_; }
 
 	/// <summary>マテリアルを直接編集する（色・UV変換。ImGui 用）</summary>
 	Material* GetMaterialData() { return materialData_; }
@@ -95,6 +118,14 @@ private:
 	float   rotation_ = 0.0f;               // 回転（ラジアン）
 	Vector2 size_{ 100.0f, 100.0f };        // 大きさ（ピクセル）
 	Vector2 anchorPoint_{ 0.0f, 0.0f };     // 基準点。(0,0)=左上
+
+	// ────────────────────────────────────────────────────────────────
+	// 切り出し範囲（すべてピクセル単位。UV への変換は UpdateVertices が行う）
+	//   size_ は「画面に描く大きさ」、こちらは「画像のどこを取るか」で別物
+	// ────────────────────────────────────────────────────────────────
+	Vector2 textureRectLeftTop_{ 0.0f, 0.0f };   // 元画像の左上からの位置
+	Vector2 textureRectSize_{ 1.0f, 1.0f };      // 切り出す大きさ
+	Vector2 textureResolution_{ 1.0f, 1.0f };    // 元画像の解像度。SetTextureIndex で取る
 
 	// 平行投影行列。画面サイズが変わらないので初期化時に1回作る
 	Matrix4x4 projectionMatrix_{};
