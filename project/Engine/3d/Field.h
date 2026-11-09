@@ -16,6 +16,9 @@ struct AABB {
 
 	/// <summary>点がこの箱の中にあるか</summary>
 	bool Contains(const Vector3& point) const;
+
+	/// <summary>min と max が逆転していたら入れ替える</summary>
+	void Normalize();
 };
 
 /// <summary>AABB を12本の線で描く（ワイヤーフレーム）</summary>
@@ -41,7 +44,6 @@ public:
 	// 派生が実装するもの
 	// ────────────────────────────────────────────────────────────────
 
-
 	/// <summary>粒に効果を与える。範囲内かの判定は呼ぶ側が済ませている</summary>
 	/// <param name="particle">書き換える粒</param>
 	/// <param name="deltaTime">経過秒数</param>
@@ -50,28 +52,72 @@ public:
 	/// <summary>インスペクタの見出しに出す名前。実装必須</summary>
 	virtual const char* GetTypeName() const = 0;
 
-	/// <summary>インスペクタに自分固有の設定を描く</summary>
-	virtual void DrawInspector() {}
+	// ────────────────────────────────────────────────────────────────
+	// 外から呼ぶ入口（あえて virtual にしない）
+	//   どの場にも共通のルールをここで済ませ、
+	//   形ごとに違う部分だけを protected の virtual に任せる
+	//     → 派生が共通ルールを書き忘れる余地がなくなる
+	// ────────────────────────────────────────────────────────────────
 
-	/// <summary>この位置が効果範囲内か。形を変えたい派生は上書きする</summary>
-	virtual bool IsInside(const Vector3& position) const { return area_.Contains(position); }
+	/// <summary>この位置に効果が届くか</summary>
+	bool IsInside(const Vector3& position) const {
+		//   範囲で絞らない設定なら、形に関係なくどこでも効く
+		if (!isAreaLimited_) {
+			return true;
+		}
+		return IsInsideArea(position);
+	}
 
-	/// <summary>効果範囲を線で描く。形を変えた派生は上書きする</summary>
-	virtual void DrawGizmos(PrimitiveDrawer& drawer) const;
+	/// <summary>効果範囲を線で描く</summary>
+	void DrawGizmos(PrimitiveDrawer& drawer) const {
+		if (!isGizmoVisible_) {
+			return;
+		}
+		DrawAreaGizmos(drawer);
+	}
+
+	/// <summary>インスペクタを描く（共通の設定 ＋ 派生固有の設定）</summary>
+	void DrawInspector();
+
 	// ────────────────────────────────────────────────────────────────
 	// 共通の機能
 	// ────────────────────────────────────────────────────────────────
 	bool IsEnabled() const { return isEnabled_; }
 	void SetEnabled(bool enabled) { isEnabled_ = enabled; }
 
+	/// <summary>効果範囲で絞るか。false ならどこにいる粒にも効く</summary>
+	bool IsAreaLimited() const { return isAreaLimited_; }
+	void SetAreaLimited(bool limited) { isAreaLimited_ = limited; }
+
+	/// <summary>この場のギズモを描くか</summary>
+	bool IsGizmoVisible() const { return isGizmoVisible_; }
+	void SetGizmoVisible(bool visible) { isGizmoVisible_ = visible; }
+
 	const AABB& GetArea() const { return area_; }
 	AABB& GetArea() { return area_; }
+
 protected:
 	// 直接 new させない。派生クラスからだけ構築できる
 	Field() = default;
+
+	// ────────────────────────────────────────────────────────────────
+	// 派生が上書きできるもの（形ごとに違う部分だけ）
+	// ────────────────────────────────────────────────────────────────
+
+	/// <summary>形による範囲判定。球などにしたい派生が上書きする</summary>
+	virtual bool IsInsideArea(const Vector3& position) const { return area_.Contains(position); }
+
+	/// <summary>範囲の形を線で描く。形を変えた派生が上書きする</summary>
+	virtual void DrawAreaGizmos(PrimitiveDrawer& drawer) const;
+
+	/// <summary>派生固有の設定を描く。共通の設定は基底が描く</summary>
+	virtual void DrawOwnInspector() {}
+
 private:
-	AABB area_{};        // 効果範囲
-	bool isEnabled_ = true;
+	AABB area_{};                  // 効果範囲
+	bool isEnabled_ = true;        // 効果そのもののオンオフ
+	bool isAreaLimited_ = true;    // false なら範囲を無視して世界全体に効く
+	bool isGizmoVisible_ = true;   // この場のギズモを描くか
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -84,8 +130,9 @@ public:
 		: acceleration_(acceleration) {}
 
 	void Apply(Particle& particle, float deltaTime) const override;
-	void DrawInspector() override;
 	const char* GetTypeName() const override { return "AccelerationField"; }
+protected:
+	void DrawOwnInspector() override;
 
 private:
 	// 1秒あたりに速度をどれだけ変化させるか

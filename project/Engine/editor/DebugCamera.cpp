@@ -121,10 +121,10 @@ void DebugCamera::UpdateMatrices() {
 	// ピボット回転：注視点から distance_ だけ後ろへ下がった位置がカメラの座標
 	// ローカルの {0, 0, -distance_} を現在の姿勢で回せば、自動的に円軌道になる
 	const Vector3 offset = TransformNormal({ 0.0f, 0.0f, -distance_ }, matRot_);
-	translation_ = target_ + offset;
+	worldPosition_ = target_ + offset;
 
 	// 座標から平行移動行列を計算する
-	Matrix4x4 translateMatrix = MakeTranslateMatrix(translation_);
+	Matrix4x4 translateMatrix = MakeTranslateMatrix(worldPosition_);
 
 	// 累積回転行列と平行移動行列からワールド行列を計算する
 	// 「原点で回してから目的地へ運ぶ」順序。逆にすると原点の周りを公転してしまう

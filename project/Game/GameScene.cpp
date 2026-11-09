@@ -329,8 +329,8 @@ void GameScene::DrawScene(const CameraData& camera) {
 	std::vector<ParticleEmitter*> emitters;
 
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
-
-		if (!gameObject->IsActive()) {
+		//   親が止まっていれば、子のパーティクルも描かない
+		if (!gameObject->IsActiveInHierarchy()) {
 			continue;
 		}
 
@@ -576,12 +576,14 @@ void GameScene::DrawDebugPanel() {
 		ImGui::Text("cam input: %s", debugCamera.IsInputEnabled() ? "ENABLED" : "disabled");
 		ImGui::Separator();
 
+		//   同じ getter を3回呼ばず、参照を1つ取って使う
+		const Vector3& cameraPosition = debugCamera.GetWorldPosition();
+		const Vector3& cameraTarget = debugCamera.GetTarget();
+
 		ImGui::Text("pos      : %.2f, %.2f, %.2f",
-			debugCamera.GetTranslation().x, debugCamera.GetTranslation().y,
-			debugCamera.GetTranslation().z);
+			cameraPosition.x, cameraPosition.y, cameraPosition.z);
 		ImGui::Text("target   : %.2f, %.2f, %.2f",
-			debugCamera.GetTarget().x, debugCamera.GetTarget().y,
-			debugCamera.GetTarget().z);
+			cameraTarget.x, cameraTarget.y, cameraTarget.z);
 		ImGui::Text("dist     : %.2f", debugCamera.GetDistance());
 		ImGui::Separator();
 

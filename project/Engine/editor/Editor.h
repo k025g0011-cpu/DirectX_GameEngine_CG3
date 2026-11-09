@@ -44,15 +44,6 @@ public:
 	/// <summary>いま描画先にすべきレンダーテクスチャ</summary>
 	RenderTexture& GetActiveRenderTexture();
 
-	/// <summary>いま使うべきビュープロジェクション行列</summary>
-	const Matrix4x4& GetViewProjectionMatrix() const;
-
-	/// <summary>いま使うべきビュー行列（カメラの向きが要るとき用）</summary>
-	const Matrix4x4& GetViewMatrix() const;
-
-	/// <summary>いま使うべき射影行列</summary>
-	const Matrix4x4& GetProjectionMatrix() const;
-
 	/// <summary>今のカメラの行列一式。描画時はこれを配る</summary>
 	CameraData GetCameraData() const;
 
@@ -75,6 +66,14 @@ private:
 	void DrawAssetPanel();
 	/// <summary>1オブジェクトとその子を再帰で描く</summary>
 	void DrawObjectNode(GameObject* object);
+
+	// ────────────────────────────────────────────────────────────────
+	// GetCameraData() の内訳
+	//   いま有効なカメラから1つずつ取り出す。外からは使わせない
+	// ────────────────────────────────────────────────────────────────
+	const Matrix4x4& GetViewMatrix() const;
+	const Matrix4x4& GetProjectionMatrix() const;
+	const Matrix4x4& GetViewProjectionMatrix() const;
 
 	const EngineContext* context_ = nullptr;
 	Camera* gameCamera_ = nullptr;

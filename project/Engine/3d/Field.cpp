@@ -1,6 +1,7 @@
 #include "Field.h"
 
 #include <array>
+#include <utility>   // std::swap
 
 #include "Particle.h"
 #include "PrimitiveDrawer.h"
@@ -39,6 +40,18 @@ bool AABB::Contains(const Vector3& point) const {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// min と max が逆転していたら入れ替える
+//   min > max の箱は、Contains が必ず false を返す
+//   症状は「場が効かない」なので、原因が範囲の反転だと気づきにくい
+//   インスペクタで触れる値なので、入力の直後に直しておく
+// ════════════════════════════════════════════════════════════════════
+void AABB::Normalize() {
+	if (min.x > max.x) { std::swap(min.x, max.x); }
+	if (min.y > max.y) { std::swap(min.y, max.y); }
+	if (min.z > max.z) { std::swap(min.z, max.z); }
+}
+
+// ════════════════════════════════════════════════════════════════════
 // AABB をワイヤーフレームで描く
 //   8頂点を作ってから、辺の表を回して12本の線を積む
 // ════════════════════════════════════════════════════════════════════
@@ -69,16 +82,51 @@ void DrawAABBWireframe(PrimitiveDrawer& drawer, const AABB& area, const Vector4&
 }
 
 // ════════════════════════════════════════════════════════════════════
-// 効果範囲を線で描く
+// 効果範囲の「形」を線で描く
 //   有効／無効で色を変える。無効でも位置は見えるようにしておく
+//   描くかどうかの判断は、非 virtual の Field::DrawGizmos が済ませている
 // ════════════════════════════════════════════════════════════════════
-void Field::DrawGizmos(PrimitiveDrawer& drawer) const {
+void Field::DrawAreaGizmos(PrimitiveDrawer& drawer) const {
 
 	const Vector4 color = isEnabled_
 		? Vector4{ 0.3f, 0.8f, 1.0f, 1.0f }     // 有効：水色
 	: Vector4{ 0.3f, 0.35f, 0.4f, 1.0f };   // 無効：くすんだ灰青
 
 	DrawAABBWireframe(drawer, area_, color);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// インスペクタ
+//   どの場にも共通の設定をここで描き、最後に派生固有の設定を描かせる
+//   呼ぶ側はこの1つを呼べばよい
+// ════════════════════════════════════════════════════════════════════
+void Field::DrawInspector() {
+#ifdef USE_IMGUI
+
+	//   「有効」は呼ぶ側がヘッダ行に置く（折りたたんだままでも押せるように）
+	//   ここには、開いたときだけ見えればよい設定を並べる
+	ImGui::Checkbox("ギズモ", &isGizmoVisible_);
+	ImGui::SameLine();
+	ImGui::Checkbox("範囲で絞る", &isAreaLimited_);
+
+	//   範囲で絞らないときは AABB をいじっても意味がないので、触れなくする
+	//   BeginDisabled と EndDisabled は、必ず対で呼ぶ
+	ImGui::BeginDisabled(!isAreaLimited_);
+	{
+		ImGui::DragFloat3("範囲 min", &area_.min.x, 0.1f);
+		ImGui::DragFloat3("範囲 max", &area_.max.x, 0.1f);
+
+		//   ドラッグ中に min が max を追い越すことがある
+		area_.Normalize();
+	}
+	ImGui::EndDisabled();
+
+	ImGui::Separator();
+
+	//   ここから下は派生が描く
+	DrawOwnInspector();
+
+#endif
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -92,10 +140,10 @@ void AccelerationField::Apply(Particle& particle, float deltaTime) const {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// インスペクタ
-//   範囲（AABB）は基底が描くので、ここでは加速度だけ
+// インスペクタ（この場だけの設定）
+//   有効・範囲・ギズモは基底が描くので、ここでは加速度だけ
 // ════════════════════════════════════════════════════════════════════
-void AccelerationField::DrawInspector() {
+void AccelerationField::DrawOwnInspector() {
 #ifdef USE_IMGUI
 	ImGui::DragFloat3("加速度", &acceleration_.x, 0.1f);
 #endif

@@ -38,8 +38,12 @@ public:
 	/// <summary>ビュー行列 × 射影行列。描画時はこれを渡す</summary>
 	const Matrix4x4& GetViewProjectionMatrix() const { return viewProjectionMatrix_; }  
 
+	/// <summary>カメラのワールド座標</summary>
+	///   target_ / distance_ / matRot_ から毎フレーム計算される「結果」
+	///   設定はできない。動かしたいときは SetTarget / SetDistance を使う
+	const Vector3& GetWorldPosition() const { return worldPosition_; }
+
 	// ImGui表示用
-	const Vector3& GetTranslation() const { return translation_; }
 	const Vector3& GetTarget() const { return target_; }
 	float GetDistance() const { return distance_; }
 
@@ -79,7 +83,7 @@ private:
 
 	// ───── 計算結果 ─────
 	// カメラのワールド座標。target_ と distance_ と matRot_ から毎フレーム求まる
-	Vector3 translation_{};
+	Vector3 worldPosition_{};
 	Matrix4x4 viewMatrix_{};
 	Matrix4x4 projectionMatrix_{};
 	Matrix4x4 viewProjectionMatrix_{};  

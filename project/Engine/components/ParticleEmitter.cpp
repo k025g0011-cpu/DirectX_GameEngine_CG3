@@ -243,6 +243,8 @@ void ParticleEmitter::DrawInspector() {
 		// 同じラベルが衝突しないよう番号で区別する
 		ImGui::PushID(static_cast<int>(index));
 
+		//   有効チェックはヘッダ行に置く
+		//     折りたたんだままでもオンオフできるようにするため
 		bool enabled = field->IsEnabled();
 		if (ImGui::Checkbox("##fieldEnabled", &enabled)) {
 			field->SetEnabled(enabled);
@@ -250,13 +252,7 @@ void ParticleEmitter::DrawInspector() {
 		ImGui::SameLine();
 
 		if (ImGui::CollapsingHeader(field->GetTypeName())) {
-
-			// 範囲は全部の場に共通なので、ここで描く
-			AABB& area = field->GetArea();
-			ImGui::DragFloat3("範囲 min", &area.min.x, 0.1f);
-			ImGui::DragFloat3("範囲 max", &area.max.x, 0.1f);
-
-			// 場ごとの固有設定は、場自身に描かせる
+			//   中身は共通設定も固有設定も Field 自身が描く
 			field->DrawInspector();
 		}
 

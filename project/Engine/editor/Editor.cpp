@@ -149,7 +149,7 @@ CameraData Editor::GetCameraData() const {
 
 	// カメラの位置。鏡面反射で「どこから見ているか」に使う
 	camera.worldPosition = (viewMode_ == ViewMode::Edit)
-		? debugCamera_.GetTranslation()
+		? debugCamera_.GetWorldPosition()
 		: gameCamera_->GetTranslate();
 
 	return camera;
