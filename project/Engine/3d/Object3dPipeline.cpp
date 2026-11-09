@@ -1,6 +1,7 @@
 #include "Object3dPipeline.h"
 
 #include <cassert>
+#include <array>
 
 #include "DirectXCommon.h"
 #include "Logger.h"
@@ -36,7 +37,7 @@ void Object3dPipeline::CreateRootSignature() {
 	// ルートパラメータ（シェーダーへの引数の一覧）
 	//   ここの並び順が kRootParameterXxx の値そのもの
 	// ────────────────────────────────────────────────────────────────
-	D3D12_ROOT_PARAMETER rootParameters[8] = {};
+	std::array<D3D12_ROOT_PARAMETER, kRootParameterCount> rootParameters{};
 
 	// [0] Material（PS b0）
 	rootParameters[kRootParameterMaterial].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;     // CBVを使う
@@ -62,7 +63,7 @@ void Object3dPipeline::CreateRootSignature() {
 	  地形	                    草・土・岩の画像 + どこに何を塗るかのブレンド用画像
 	  ポストエフェクト	            描画結果の画面 + 深度（被写界深度など）
 	*/
-	D3D12_DESCRIPTOR_RANGE descriptorRange[1] = {};
+	std::array<D3D12_DESCRIPTOR_RANGE, 1> descriptorRange{};
 	descriptorRange[0].BaseShaderRegister = 0;   // t0 から始まる
 	descriptorRange[0].NumDescriptors = 1;       // t0 の1枚だけ
 	descriptorRange[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
@@ -70,8 +71,9 @@ void Object3dPipeline::CreateRootSignature() {
 
 	rootParameters[kRootParameterTexture].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 	rootParameters[kRootParameterTexture].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
-	rootParameters[kRootParameterTexture].DescriptorTable.pDescriptorRanges = descriptorRange;
-	rootParameters[kRootParameterTexture].DescriptorTable.NumDescriptorRanges = _countof(descriptorRange);
+	rootParameters[kRootParameterTexture].DescriptorTable.pDescriptorRanges = descriptorRange.data();
+	rootParameters[kRootParameterTexture].DescriptorTable.NumDescriptorRanges =
+		static_cast<UINT>(descriptorRange.size());
 
 	// [3] LightCount（PS b1）… 各ライトが何個入っているか
 	rootParameters[kRootParameterLightCount].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;		// CBVを使う
@@ -102,8 +104,8 @@ void Object3dPipeline::CreateRootSignature() {
 	rootParameters[kRootParameterSpotLights].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;	// PixelShaderで使う
 	rootParameters[kRootParameterSpotLights].Descriptor.ShaderRegister = 3;						// レジスタ番号t3とバインド
 
-	descriptionRootSignature.pParameters = rootParameters;
-	descriptionRootSignature.NumParameters = _countof(rootParameters);
+	descriptionRootSignature.pParameters = rootParameters.data();
+	descriptionRootSignature.NumParameters = static_cast<UINT>(rootParameters.size());
 
 
 #pragma region MyRegion
@@ -121,7 +123,7 @@ void Object3dPipeline::CreateRootSignature() {
 	// サンプラー（テクスチャの読み方）
 	//   RootSignature に焼き込むので、実行時に何も渡さなくてよい
 	// ────────────────────────────────────────────────────────────────
-	D3D12_STATIC_SAMPLER_DESC staticSamplers[1] = {};   // register(s0)
+	std::array<D3D12_STATIC_SAMPLER_DESC, 1> staticSamplers{};   // register(s0)
 	staticSamplers[0].Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;   // バイリニア
 	staticSamplers[0].AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP; // 0~1の範囲外をリピート
 	staticSamplers[0].AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
@@ -131,8 +133,8 @@ void Object3dPipeline::CreateRootSignature() {
 	staticSamplers[0].ShaderRegister = 0;
 	staticSamplers[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-	descriptionRootSignature.pStaticSamplers = staticSamplers;
-	descriptionRootSignature.NumStaticSamplers = _countof(staticSamplers);
+	descriptionRootSignature.pStaticSamplers = staticSamplers.data();
+	descriptionRootSignature.NumStaticSamplers = static_cast<UINT>(staticSamplers.size());
 
 	// ────────────────────────────────────────────────────────────────
 	// シリアライズ（ポインタの先まで全部たどって1本のバイト列に詰め直す）
@@ -186,7 +188,7 @@ void Object3dPipeline::CreatePipelineStates() {
 	float32_t2 uv1 : TEXCOORD1;   // SemanticName = "TEXCOORD", SemanticIndex = 1
 */
 #pragma endregion
-	D3D12_INPUT_ELEMENT_DESC inputElementDescs[3] = {};
+	std::array<D3D12_INPUT_ELEMENT_DESC, 3> inputElementDescs{};
 
 	inputElementDescs[0].SemanticName = "POSITION";
 	inputElementDescs[0].SemanticIndex = 0;
@@ -212,8 +214,8 @@ void Object3dPipeline::CreatePipelineStates() {
 	*/
 #pragma endregion
 	D3D12_INPUT_LAYOUT_DESC inputLayoutDesc{};
-	inputLayoutDesc.pInputElementDescs = inputElementDescs;
-	inputLayoutDesc.NumElements = _countof(inputElementDescs);
+	inputLayoutDesc.pInputElementDescs = inputElementDescs.data();
+	inputLayoutDesc.NumElements = static_cast<UINT>(inputElementDescs.size());
 
 	// ────────────────────────────────────────────────────────────────
 	// RasterizerState（三角形をピクセルに分解する処理の設定）

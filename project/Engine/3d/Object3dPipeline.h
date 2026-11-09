@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <d3d12.h>
 #include <wrl.h>
+#include <array>
 
 #include "BlendMode.h"
 
@@ -37,6 +38,13 @@ public:
 	static constexpr uint32_t kRootParameterPointLights = 6;  // PS t2  StructuredBuffer
 	static constexpr uint32_t kRootParameterSpotLights = 7;  // PS t3  StructuredBuffer
 
+	// ────────────────────────────────────────────────────────────────
+	// ルートパラメータの総数
+	//   上に1つ足したら、ここも必ず1つ増やす
+	//   配列の大きさをこの値から作るので、2箇所に数字が散らばらない
+	// ────────────────────────────────────────────────────────────────
+	static constexpr uint32_t kRootParameterCount = 8;
+
 	/// <summary>RootSignature とすべての PSO を作る</summary>
 	void Initialize(DirectXCommon* dxCommon);
 
@@ -61,6 +69,6 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
 
 	// ブレンドモードごとの PSO
-	Microsoft::WRL::ComPtr<ID3D12PipelineState>
-		pipelineStates_[static_cast<uint32_t>(BlendMode::kMaxCount)];
+	std::array<Microsoft::WRL::ComPtr<ID3D12PipelineState>,
+		static_cast<size_t>(BlendMode::kMaxCount)> pipelineStates_;
 };

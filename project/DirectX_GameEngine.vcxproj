@@ -207,6 +207,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\input\Input.cpp" />
     <ClCompile Include="Engine\loader\AssimpLoader.cpp" />
     <ClCompile Include="Engine\loader\PrimitiveModel.cpp" />
+    <ClCompile Include="Engine\math\Easing.cpp" />
     <ClCompile Include="Engine\math\MathUtility.cpp" />
     <ClCompile Include="Engine\scene\Component.cpp" />
     <ClCompile Include="Engine\scene\GameObject.cpp" />
@@ -276,6 +277,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\input\Input.h" />
     <ClInclude Include="Engine\loader\AssimpLoader.h" />
     <ClInclude Include="Engine\loader\PrimitiveModel.h" />
+    <ClInclude Include="Engine\math\Easing.h" />
     <ClInclude Include="Engine\math\MathUtility.h" />
     <ClInclude Include="Engine\math\Matrix4x4.h" />
     <ClInclude Include="Engine\math\Vector2.h" />
