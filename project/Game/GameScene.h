@@ -52,9 +52,6 @@ private:
 	/// <summary>シーンの中身を描く。描画先は呼び出し側が設定済み</summary>
 	void DrawScene(const CameraData& camera);
 
-	/// <summary>基準グリッドを PrimitiveDrawer に予約する</summary>
-	void DrawGrid();
-
 	/// <summary>シーン共通の定数（ライト・カメラ）をルートに設定する</summary>
 	///   ルートシグネチャを設定し直すと引数が無効になるので、そのたびに呼ぶ
 	void SetSceneConstants(const CameraData& camera);
@@ -143,9 +140,4 @@ private:
 	Transform uvTransformSprite_{
 		{ 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
 
-	// ────────────────────────────────────────────────────────────────
-	// グリッドの設定
-	// ────────────────────────────────────────────────────────────────
-	static constexpr int32_t kGridHalfCount = 10;    // 中心から何マス伸ばすか
-	static constexpr float   kGridSpacing = 1.0f;    // 1マスの大きさ
 };

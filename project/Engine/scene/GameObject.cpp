@@ -20,7 +20,7 @@ void GameObject::Initialize(const EngineContext& context, const std::string& nam
 //   自分では何もせず、コンポーネントに配るだけ
 // ════════════════════════════════════════════════════════════════════
 void GameObject::Update() {
-	if (!isActive_) {
+	if (!IsActiveInHierarchy()) {
 		return;
 	}
 
@@ -36,7 +36,7 @@ void GameObject::Update() {
 //   PreDraw と PostDraw の間で呼ばれる。値は変えない
 // ════════════════════════════════════════════════════════════════════
 void GameObject::Draw(const CameraData& camera) {
-	if (!isActive_) {
+	if (!IsActiveInHierarchy()) {
 		return;
 	}
 
@@ -92,6 +92,13 @@ void GameObject::DrawInspector() {
 		ImGui::TextDisabled("(子 %d 個)", static_cast<int>(children_.size()));
 	}
 
+	//   自分はオンなのに、親が止まっていて動いていない状態を見せる
+	//     チェックが入っているのに動かない、という混乱を防ぐ
+	if (isActive_ && !IsActiveInHierarchy()) {
+		ImGui::SameLine();
+		ImGui::TextDisabled("(親が停止中)");
+	}
+
 	ImGui::Separator();
 
 	// ───── Transform（コンポーネントではないので手書き） ─────
@@ -129,7 +136,7 @@ void GameObject::DrawInspector() {
 //   Draw と同じく、自分では何もせずコンポーネントに配るだけ
 // ════════════════════════════════════════════════════════════════════
 void GameObject::DrawGizmos(PrimitiveDrawer& drawer) {
-	if (!isActive_) {
+	if (!IsActiveInHierarchy()) {
 		return;
 	}
 

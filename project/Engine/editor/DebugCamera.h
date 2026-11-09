@@ -28,7 +28,8 @@ public:
 	void Initialize(Input* input, int32_t clientWidth, int32_t clientHeight);
 
 	/// <summary>更新。毎フレーム呼ぶ</summary>
-	void Update();
+	/// <param name="deltaTime">経過秒数。ゲームの一時停止や速度変更の影響を受けない値を渡す</param>
+	void Update(float deltaTime);
 
 	// ───── ゲッター ─────
 	// 短く中身が変わらないものはヘッダに直接書いてよい（暗黙にinline扱い）
@@ -42,6 +43,14 @@ public:
 	const Vector3& GetTarget() const { return target_; }
 	float GetDistance() const { return distance_; }
 
+	/// <summary>注視点（回転と移動の中心）</summary>
+	///   行列は次の Update() で作り直されるので、ここでは値を入れるだけ
+	void SetTarget(const Vector3& target) { target_ = target; }
+
+	/// <summary>注視点からの距離。小さすぎる値は内部で切り上げる</summary>
+	///   ホイール操作と同じ下限を通すので、.cpp 側に実装を置く
+	void SetDistance(float distance);
+
 	/// <summary>入力を受け付けるかどうか（false でも行列の更新は行う）</summary>
 	void SetInputEnabled(bool enabled) { isInputEnabled_ = enabled; }
 	bool IsInputEnabled() const { return isInputEnabled_; }
@@ -51,12 +60,11 @@ private:
 	// 各操作の処理関数(すべてUpdate関数でまとめて呼び出す）
 	// ───── Update() の内訳 ─────
 	void UpdateMouseControl();	// 中ドラッグ（回転・パン）とホイール
-	void UpdateKeyboardMove();	// WASD / QE
+	void UpdateKeyboardMove(float deltaTime);	// WASD / QE
 	void UpdateMatrices();		// カメラ座標とビュー行列の計算
 
 	// ───── 修飾キーの判定 ─────
 	bool IsShiftPressed() const;
-	bool IsCtrlPressed() const;
 
 	// 借り物のポインタ。deleteしない
 	Input* input_ = nullptr;
@@ -80,7 +88,7 @@ private:
 	float rotateSpeed_ = 0.005f;   // マウス1ピクセルあたりのラジアン
 	float moveSpeed_ = 0.005f;   // マウス1ピクセルあたりのワールド単位
 	float wheelSpeed_ = 0.5f;     // ホイール1ノッチあたりのワールド単位
-	float keySpeed_ = 0.05f;    // キー1フレームあたりのワールド単位
+	float keySpeed_ = 3.0f;    // キー1フレームあたりのワールド単位
 
 	// ───── 入力受付フラグ ─────
 	bool isInputEnabled_ = true;

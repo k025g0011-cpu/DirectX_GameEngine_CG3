@@ -7,6 +7,7 @@
 #include <dxgi1_6.h>
 #include <ostream>
 #include <wrl.h>
+#include <array>
 
 // 前方宣言（ポインタとしてしか使わないので #include 不要）
 class WinApp;
@@ -176,7 +177,7 @@ private:
 	// スワップチェーンと描画先
 	// ────────────────────────────────────────────────────────────────
 	Microsoft::WRL::ComPtr<IDXGISwapChain4> swapChain_;
-	Microsoft::WRL::ComPtr<ID3D12Resource>  swapChainResources_[kBackBufferCount];
+	std::array<Microsoft::WRL::ComPtr<ID3D12Resource>, kBackBufferCount> swapChainResources_;
 
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> rtvDescriptorHeap_;
 	D3D12_CPU_DESCRIPTOR_HANDLE rtvHandles_[kBackBufferCount]{};

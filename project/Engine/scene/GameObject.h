@@ -53,6 +53,13 @@ public:
 	template <class T>
 	const T* GetComponent() const;
 
+	/// <summary>指定した型のコンポーネントを全部集める</summary>
+	///   戻り値ではなく引数に詰めるのは、毎フレーム呼ばれるため。
+	///   呼ぶ側がループの外で1つ用意して使い回せば、メモリ確保が起きない
+	/// <param name="result">結果の入れ物。中身は最初に空にされる</param>
+	template <class T>
+	void GetComponents(std::vector<T*>& result);
+
 	/// <summary>指定した型を持っているか</summary>
 	template <class T>
 	bool HasComponent() const { return GetComponent<T>() != nullptr; }
@@ -95,6 +102,26 @@ public:
 	/// <summary>false なら Update / Draw ごとスキップされる</summary>
 	bool IsActive() const { return isActive_; }
 	void SetActive(bool active) { isActive_ = active; }
+
+
+	/// <summary>親までさかのぼって、実際に動いているか</summary>
+	///   子も Scene の gameObjects_ に並列に並んでいるので、
+	///   親の Update を飛ばしただけでは子に届かない。だから子から親を見に行く
+	///
+	///   SetActive を再帰にしない理由：
+	///     子が自分で設定していたオフが、親をオンに戻したときに消えてしまう
+	///     「自分の意思」と「実際に動くか」を別々に持つのが正しい
+	///
+	///   SetParent が輪を拒否しているので、この再帰は必ず止まる
+	bool IsActiveInHierarchy() const {
+		if (!isActive_) {
+			return false;
+		}
+
+		//  親がいなければ自分がオンなので true 
+		//	親がいれば親の状態に従う
+		return (parent_ == nullptr) ? true : parent_->IsActiveInHierarchy();
+	}
 
 	/// <summary>エンジンの道具</summary>
 	const EngineContext& GetContext() const { return *context_; }
@@ -167,4 +194,20 @@ template <class T>
 const T* GameObject::GetComponent() const {
 	// 非 const 版を使い回す（探索処理を2回書かないための定石）
 	return const_cast<GameObject*>(this)->GetComponent<T>();
+}
+
+template <class T>
+void GameObject::GetComponents(std::vector<T*>& result) {
+
+	// ① 結果の入れ物を空にする(呼ぶ側が使い回す前提なので、毎回空にする)
+	result.clear();
+
+	// ② 全コンポーネントを調べる
+	for (const std::unique_ptr<Component>& component : components_) {
+
+		if (T* casted = dynamic_cast<T*>(component.get())) {
+			// ③ T に変換できたら結果に追加する
+			result.push_back(casted);
+		}
+	}
 }

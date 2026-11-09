@@ -5,10 +5,30 @@
 
 #include <cassert>
 #include <format>
+#include <array>
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "dxcompiler.lib")
+
+namespace {
+	/// <summary>試す機能レベルと、ログに出す表示名の組</summary>
+	///   値と名前を1つの構造体にまとめる。別々の配列に分けると、
+	///   片方だけ増やしたときに添字がずれて、範囲外を読んでしまう
+	struct FeatureLevelEntry {
+		D3D_FEATURE_LEVEL level;
+		const char* name;
+	};
+
+	// 新しいものから順に試す。生成できた時点で打ち切る
+	constexpr std::array<FeatureLevelEntry, 3> kFeatureLevels = { {
+		{ D3D_FEATURE_LEVEL_12_2, "12.2" },
+		{ D3D_FEATURE_LEVEL_12_1, "12.1" },
+		{ D3D_FEATURE_LEVEL_12_0, "12.0" },
+	} };
+
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // デストラクタ
@@ -124,21 +144,14 @@ void DirectXCommon::InitializeDevice() {
 	// ④ D3D12Device の生成
 	//     新しい機能レベルから順に試し、生成できたものを採用する
 	// ────────────────────────────────────────────────────────────────
-	D3D_FEATURE_LEVEL featureLevels[] = {
-		D3D_FEATURE_LEVEL_12_2,
-		D3D_FEATURE_LEVEL_12_1,
-		D3D_FEATURE_LEVEL_12_0,
-	};
-	const char* featureLevelStrings[] = { "12.2", "12.1", "12.0" };
-
-	for (size_t i = 0; i < _countof(featureLevels); ++i) {
+	for (const FeatureLevelEntry& entry : kFeatureLevels) {
 		// 採用したアダプタでデバイスを生成
-		hr = D3D12CreateDevice(useAdapter.Get(), featureLevels[i], IID_PPV_ARGS(&device_));
+		hr = D3D12CreateDevice(useAdapter.Get(), entry.level, IID_PPV_ARGS(&device_));
 
 		// 指定した機能レベルでデバイスが生成できたかを確認
 		if (SUCCEEDED(hr)) {
 			// 生成できたのでログ出力を行ってループを抜ける
-			Log(*logStream_, std::format("FeatureLevel : {}\n", featureLevelStrings[i]));
+			Log(*logStream_, std::format("FeatureLevel : {}\n", entry.name));
 			break;
 		}
 	}
@@ -447,7 +460,7 @@ void DirectXCommon::SetSwapChainRenderTarget() {
 
 	// 深度バッファの DSV ハンドル
 	D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle =
-		GetCpuDescriptorHandle(dsvDescriptorHeap_, descriptorSizeDSV_, 0);
+		GetDsvCpuDescriptorHandle(depthStencilDsvIndex_);
 
 	// 描画先（RTV と DSV）を設定する
 	commandList_->OMSetRenderTargets(

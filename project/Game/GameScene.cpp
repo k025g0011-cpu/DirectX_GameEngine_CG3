@@ -49,22 +49,21 @@ void GameScene::Initialize(const EngineContext& context) {
 	// オブジェクトを配置する
 	//   「箱を作る → 位置を決める → 機能を足す」の3手順
 	// ════════════════════════════════════════
-	sphereObject_ = CreateGameObject("Sphere");
-	sphereObject_->GetTransform().translate = { -1.5f, 0.0f, 0.0f };
+	sphereObject_ = CreateGameObject("Sphere1");
+	sphereObject_->GetTransform().translate = { 0.0f, 0.0f, 0.0f };
 	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
 
-
-	//   モデルの階層をそのまま GameObject ツリーにする
-	//     ヒエラルキーを開くと、Blender で置いたオブジェクトが子として並ぶ
-	Model* testModel = context_.modelManager->Load("resources/parentBarrel.glb");
-
-	CreateObjectFromModel("parentTestBarrel", testModel);
-
+	sphereObject_ = CreateGameObject("Sphere2");
+	sphereObject_->GetTransform().translate = { 0.0f, 3.0f, 0.0f };
+	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
 	// ════════════════════════════════════════
 	// パーティクル
 	//   他のオブジェクトと同じ3手順：箱を作る → 位置を決める → 機能を足す
 	// ════════════════════════════════════════
-
+	GameObject* testParticle = CreateGameObject("testParticle");
+	testParticle->GetTransform().translate = { 0.0f, 5.0f, 0.0f };
+	testParticle->AddComponent<ParticleEmitter>();
+	
 
 	// ════════════════════════════════════════
 	// スプライト
@@ -297,10 +296,13 @@ void GameScene::DrawScene(const CameraData& camera) {
 	// ① 線の描画（自前の RootSignature / PSO に切り替わる）
 	//    Reset → 積む → Draw の順。Draw より後に積んでも間に合わない
 	context_.primitiveDrawer->Reset();
-	DrawGrid();
 
-	// デバッグ表示は編集ビューのときだけ。ゲーム画面には出さない
-	if (editor_.GetViewMode() == ViewMode::Edit) {
+	//   グリッドと座標軸はエディタの備品。出すかどうかも Editor が判断する
+	editor_.DrawEditorGizmos();
+
+	// オブジェクトのデバッグ線はシーン側が積む。出すかどうかはエディタに訊く
+	//   デバッグ表示は編集ビューのときだけ。ゲーム画面には出さない
+	if (editor_.IsGizmosVisible() && editor_.GetViewMode() == ViewMode::Edit) {
 		DrawGizmos();
 	}
 
@@ -317,20 +319,33 @@ void GameScene::DrawScene(const CameraData& camera) {
 	}
 
 	// ④ パーティクル（専用パス）
-	//    パーティクルは別のパイプラインを使うので、③のループの中では描けない。
-	//    ③の途中でパイプラインを切り替えると、後続の MeshRenderer が壊れる
+	/*
+	パーティクルは別のパイプラインを使うので、③のループの中では描けない。
+	③の途中でパイプラインを切り替えると、後続の MeshRenderer が壊れる
+	*/
+
+	//	入れ物はループの外で1つ作って使い回す
+	//	中で作ると、オブジェクトの数だけメモリ確保が起きる
+	std::vector<ParticleEmitter*> emitters;
+
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
 
 		if (!gameObject->IsActive()) {
 			continue;
 		}
 
-		ParticleEmitter* emitter = gameObject->GetComponent<ParticleEmitter>();
-		if (emitter == nullptr || !emitter->IsEnabled()) {
-			continue;
-		}
+		//  ParticleEmitter を持つオブジェクトだけ、別ループで描く
+		gameObject->GetComponents<ParticleEmitter>(emitters);
+		
+		//   1つも持っていないオブジェクトはスキップ
+		for (ParticleEmitter* emitter : emitters) {
 
-		emitter->DrawParticles(camera);
+			if (!emitter->IsEnabled()) {
+				continue;
+			}
+
+			emitter->DrawParticles(camera);
+		}
 	}
 
 	// ⑤ スプライトは Object3d のパイプラインを使うので、戻してから描く
@@ -339,30 +354,6 @@ void GameScene::DrawScene(const CameraData& camera) {
 
 	// ⑥ スプライト
 	sprite_.Draw();
-}
-
-// ════════════════════════════════════════════════════════════════════
-// 基準グリッド（Blenderの床グリッド相当）
-// ════════════════════════════════════════════════════════════════════
-void GameScene::DrawGrid() {
-
-	PrimitiveDrawer& drawer = *context_.primitiveDrawer;
-
-	const Vector4 kGray = { 0.35f, 0.35f, 0.35f, 1.0f };
-	const Vector4 kRed = { 0.75f, 0.25f, 0.25f, 1.0f };
-	const Vector4 kGreen = { 0.25f, 0.65f, 0.35f, 1.0f };
-	const Vector4 kBlue = { 0.25f, 0.45f, 0.80f, 1.0f };
-
-	const float half = kGridHalfCount * kGridSpacing;
-
-	for (int32_t n = -kGridHalfCount; n <= kGridHalfCount; ++n) {
-		const float p = n * kGridSpacing;
-
-		drawer.DrawLine3d({ p, 0.0f, -half }, { p, 0.0f, half }, (n == 0) ? kBlue : kGray);
-		drawer.DrawLine3d({ -half, 0.0f, p }, { half, 0.0f, p }, (n == 0) ? kRed : kGray);
-	}
-
-	drawer.DrawLine3d({ 0.0f, 0.0f, 0.0f }, { 0.0f, half, 0.0f }, kGreen);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -422,9 +413,11 @@ void GameScene::CollectLights() {
 
 	for (const std::unique_ptr<GameObject>& gameObject : gameObjects_) {
 
-		if (!gameObject->IsActive()) {
+		//   親が止まっていれば、そのライトも消える
+		if (!gameObject->IsActiveInHierarchy()) {
 			continue;
 		}
+
 
 		//   平行光源
 		DirectionalLightComponent* directional =

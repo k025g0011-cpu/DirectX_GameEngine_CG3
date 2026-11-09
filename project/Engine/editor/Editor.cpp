@@ -7,6 +7,7 @@
 #include "GameObject.h"
 #include "GameTime.h"
 #include "WinApp.h"
+#include "PrimitiveDrawer.h"
 
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -17,6 +18,20 @@ namespace {
 	/// <summary>ヒエラルキーでオブジェクトを掴むときの小包の名前（32文字まで）</summary>
 	///   GameObject はアセットではないので、AssetPayload には置かずここで持つ
 	constexpr const char* kGameObjectPayload = "GAMEOBJECT";
+
+	// ────────────────────────────────────────────────────────────────
+	// 基準グリッド（Blender の床グリッド相当）
+	//   GameScene から移してきた。エディタの備品なのでここが持つ
+	//   クラスのメンバにしていないのは、使うのが DrawEditorGizmos だけで、
+	//   外から見える必要が無いため。いじれるようにしたくなったらメンバへ移す
+	// ────────────────────────────────────────────────────────────────
+	constexpr int32_t kGridHalfCount = 30;     // 中心から何マス伸ばすか
+	constexpr float   kGridSpacing = 1.0f;     // 1マスの大きさ
+
+	constexpr Vector4 kGridColor{ 0.35f, 0.35f, 0.35f, 1.0f };   // ふつうのマス目
+	constexpr Vector4 kAxisXColor{ 0.75f, 0.25f, 0.25f, 1.0f };  // X 軸（赤）
+	constexpr Vector4 kAxisYColor{ 0.25f, 0.65f, 0.35f, 1.0f };  // Y 軸（緑）
+	constexpr Vector4 kAxisZColor{ 0.25f, 0.45f, 0.80f, 1.0f };  // Z 軸（青）
 
 	/// <summary>アセットの種類に対応する小包の名前。ドラッグできないなら nullptr</summary>
 	const char* GetPayloadType(AssetType type) {
@@ -52,10 +67,10 @@ void Editor::Initialize(const EngineContext& context, Camera* gameCamera) {
 	desc.height = context.winApp->GetClientHeight();
 	desc.useDepth = true;
 
-	desc.clearColor = { 0.15f, 0.15f, 0.18f, 1.0f };   // 編集：暗いグレー
+	desc.clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };   // 編集：暗いグレー
 	editRenderTexture_.Initialize(context.dxCommon, desc);
 
-	desc.clearColor = { 0.1f, 0.25f, 0.5f, 1.0f };     // ゲーム：青
+	desc.clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };     // ゲーム：青
 	gameRenderTexture_.Initialize(context.dxCommon, desc);
 }
 
@@ -79,7 +94,10 @@ void Editor::Update() {
 
 	// 編集タブの画像の上にマウスがあるときだけ、カメラ操作を受け付ける
 	debugCamera_.SetInputEnabled(viewMode_ == ViewMode::Edit && isViewHovered_);
-	debugCamera_.Update();
+	//   編集カメラにはスケールしていない経過秒数を渡す
+	//     ゲームを一時停止しても、速度を 0.5 倍にしても、
+	//     カメラの操作感だけは変わらないほうがよい
+	debugCamera_.Update(context_->gameTime->GetUnscaledDeltaTime());
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -178,6 +196,15 @@ void Editor::DrawToolbar() {
 			layout_.RequestResetLayout();
 		}
 
+
+		// ───── 表示の切り替え ─────
+		//   見た目を確認するたびに使うので、パネルの奥ではなく常に見える場所に置く
+		//   Checkbox は参照を直接書き換える。連動する処理が無いので関数を通さなくてよい
+		ImGui::SameLine();
+		ImGui::Checkbox("グリッド", &showGrid_);
+		ImGui::SameLine();
+		ImGui::Checkbox("ギズモ", &showGizmos_);
+
 		// ───── fps（右端に寄せる） ─────
 		ImGui::SameLine();
 		const float fpsWidth = ImGui::CalcTextSize("000.0 fps").x;
@@ -190,6 +217,45 @@ void Editor::DrawToolbar() {
 
 #endif
 }
+
+// ════════════════════════════════════════════════════════════════════
+// 基準グリッドと座標軸
+//   GameScene::DrawGrid から移してきた
+//
+//   PrimitiveDrawer は線を溜めるだけなので、ここを呼んでもパイプラインは
+//   切り替わらない。Reset と Draw の間であればどこで呼んでもよい
+//
+//   #ifdef USE_IMGUI は付けない
+//     ImGui の機能を一切使っていないため。表示の判定も自前の bool で済む
+// ════════════════════════════════════════════════════════════════════
+void Editor::DrawEditorGizmos() {
+
+	// ────────────────────────────────────────────────────────────────
+	// ゲームビューはプレイヤーが見る画面なので、エディタの表示物は出さない
+	//   チェックが入っていても、ゲームタブでは出ない
+	// ────────────────────────────────────────────────────────────────
+	if (!showGrid_ || viewMode_ != ViewMode::Edit) {
+		return;
+	}
+
+	PrimitiveDrawer& drawer = *context_->primitiveDrawer;
+
+	const float half = kGridHalfCount * kGridSpacing;
+
+	for (int32_t n = -kGridHalfCount; n <= kGridHalfCount; ++n) {
+		const float p = n * kGridSpacing;
+
+		//   中央の1本だけ軸の色にする。原点の位置が一目で分かる
+		drawer.DrawLine3d({ p, 0.0f, -half }, { p, 0.0f, half },
+			(n == 0) ? kAxisZColor : kGridColor);
+		drawer.DrawLine3d({ -half, 0.0f, p }, { half, 0.0f, p },
+			(n == 0) ? kAxisXColor : kGridColor);
+	}
+
+	//   Y 軸だけは床に無いので、別に1本引く
+	drawer.DrawLine3d({ 0.0f, 0.0f, 0.0f }, { 0.0f, half, 0.0f }, kAxisYColor);
+}
+
 
 // ════════════════════════════════════════════════════════════════════
 // ビューのパネル

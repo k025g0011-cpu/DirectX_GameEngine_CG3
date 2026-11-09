@@ -35,12 +35,12 @@ void DebugCamera::Initialize(Input* input, int32_t clientWidth, int32_t clientHe
 //   ① 入力によるカメラの移動や回転
 //   ② ビュー行列の更新
 // ════════════════════════════════════════
-void DebugCamera::Update() {
+void DebugCamera::Update(float deltaTime) {
 
 	// ゲームビューの上にマウスがあるときだけ入力を処理する
 	if (isInputEnabled_) {
 		UpdateMouseControl();
-		UpdateKeyboardMove();
+		UpdateKeyboardMove(deltaTime);
 	}
 
 	// 行列は入力の有無にかかわらず毎フレーム更新する
@@ -85,9 +85,8 @@ void DebugCamera::UpdateMouseControl() {
 	//   中ボタンの if の外。ドラッグ中でもホイールは効かせたい
 	const float wheel = input_->GetMouseWheel();
 	if (wheel != 0.0f) {
-		distance_ -= wheel * wheelSpeed_;   // 奥に回す＝近づく
-		// 注視点を通り抜けて裏返るのを防ぐ
-		if (distance_ < kMinDistance) { distance_ = kMinDistance; }
+		// 下限の判定は SetDistance が持っているので、ここでは計算だけ
+		SetDistance(distance_ - wheel * wheelSpeed_);   // 下限を通す
 	}
 }
 
@@ -95,15 +94,18 @@ void DebugCamera::UpdateMouseControl() {
 // キーボードによる注視点の移動
 //   6方向を1つのベクトルに足し込む（斜め移動が自動で手に入る）
 // ════════════════════════════════════════
-void DebugCamera::UpdateKeyboardMove() {
+void DebugCamera::UpdateKeyboardMove(float deltaTime) {
+
+	// 秒速に経過秒数を掛けて、このフレームの移動量にする
+	const float speed = keySpeed_ * deltaTime;
 
 	Vector3 keyMove = { 0.0f, 0.0f, 0.0f };
-	if (input_->PushKey(DIK_W)) { keyMove.z += keySpeed_; }   // 前
-	if (input_->PushKey(DIK_S)) { keyMove.z -= keySpeed_; }   // 後
-	if (input_->PushKey(DIK_D)) { keyMove.x += keySpeed_; }   // 右
-	if (input_->PushKey(DIK_A)) { keyMove.x -= keySpeed_; }   // 左
-	if (input_->PushKey(DIK_E)) { keyMove.y += keySpeed_; }   // 上
-	if (input_->PushKey(DIK_Q)) { keyMove.y -= keySpeed_; }   // 下
+	if (input_->PushKey(DIK_W)) { keyMove.z += speed; }   // 前
+	if (input_->PushKey(DIK_S)) { keyMove.z -= speed; }   // 後
+	if (input_->PushKey(DIK_D)) { keyMove.x += speed; }   // 右
+	if (input_->PushKey(DIK_A)) { keyMove.x -= speed; }   // 左
+	if (input_->PushKey(DIK_E)) { keyMove.y += speed; }   // 上
+	if (input_->PushKey(DIK_Q)) { keyMove.y -= speed; }   // 下
 
 	// 角度は毎フレーム変わるので、移動ベクトルは毎回変換し直す（キャッシュ不可）
 	target_ += TransformNormal(keyMove, matRot_);
@@ -133,6 +135,14 @@ void DebugCamera::UpdateMatrices() {
 
 	// ビュー×射影を合成しておく（Camera と同じ窓口を持たせる）
 	viewProjectionMatrix_ = viewMatrix_ * projectionMatrix_;
+}
+
+// ════════════════════════════════════════
+// 注視点からの距離
+//   ホイール操作もここを通すので、下限の判定が1箇所に集まる
+// ════════════════════════════════════════
+void DebugCamera::SetDistance(float distance) {
+	distance_ = (distance < kMinDistance) ? kMinDistance : distance;
 }
 
 // ════════════════════════════════════════
