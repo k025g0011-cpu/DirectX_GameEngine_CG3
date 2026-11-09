@@ -4,7 +4,7 @@
 #include <format>
 #include <fstream>
 #include <string>
-#include <assert.h>
+#include <cassert>
 
 #include "WinApp.h"
 #include "DirectXCommon.h"
