@@ -50,7 +50,7 @@ DirectionalLight DirectionalLightComponent::MakeGpuData() const {
 	return data;
 }
 
-void DirectionalLightComponent::DrawGizmos(PrimitiveDrawer& drawer) {
+void DirectionalLightComponent::DrawGizmos(PrimitiveDrawer& drawer) const {
 	//   平行光源は位置を持たないが、置いた場所から向きを示す矢印を描く
 	const Vector3 origin = GetWorldPosition();
 	const Vector3 forward = GetForward();
@@ -95,7 +95,7 @@ void PointLightComponent::DrawInspector() {
 #endif
 }
 
-void PointLightComponent::DrawGizmos(PrimitiveDrawer& drawer) {
+void PointLightComponent::DrawGizmos(PrimitiveDrawer& drawer) const {
 	const Vector3 p = GetWorldPosition();
 	const Vector4 color{ 1.0f, 1.0f, 0.4f, 1.0f };
 
@@ -168,7 +168,7 @@ void SpotLightComponent::DrawInspector() {
 #endif
 }
 
-void SpotLightComponent::DrawGizmos(PrimitiveDrawer& drawer) {
+void SpotLightComponent::DrawGizmos(PrimitiveDrawer& drawer) const {
 	const Vector3 origin = GetWorldPosition();
 	const Vector3 axis = GetForward();
 	const float radius = distance_ * std::tan(angleDeg_ * kDegToRad);

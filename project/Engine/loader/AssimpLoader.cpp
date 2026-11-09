@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <filesystem>
+#include <span>        // ポインタ＋個数の2つ組を、範囲 for が回せる形にまとめる
 
 #include <windows.h>   // OutputDebugStringA（読み込み失敗の理由を出すため）
 
@@ -138,8 +139,8 @@ namespace {
 
 		//   子を作る
 		//   この中で nodes が伸びるので、上で取った参照は使わない。毎回添字で取り直す
-		for (uint32_t i = 0; i < src.mNumChildren; ++i) {
-			const uint32_t childIndex = BuildNode(*src.mChildren[i], modelData);
+		for (const aiNode* child : std::span(src.mChildren, src.mNumChildren)) {
+			const uint32_t childIndex = BuildNode(*child, modelData);
 			modelData.nodes[selfIndex].children.push_back(childIndex);
 		}
 
@@ -165,6 +166,11 @@ ModelData AssimpLoader::Load(const std::string& filePath) {
 			"  reason: " + importer.GetErrorString() + "\n";
 		OutputDebugStringA(message.c_str());
 		assert(false);
+
+		//   assert は Release（NDEBUG）で消える。消えると下へ落ちて
+		//   scene->mNumMaterials で nullptr を踏むので、ここで必ず返す
+		//   空の ModelData を返せば、何も描かれないだけで済む
+		return {};
 	}
 
 	//   モデルと同じフォルダ。テクスチャの相対パスを解決するのに使う
@@ -260,9 +266,8 @@ ModelData AssimpLoader::Load(const std::string& filePath) {
 	// ════════════════════════════════════════
 	modelData.meshes.reserve(scene->mNumMeshes);
 
-	for (uint32_t meshIndex = 0; meshIndex < scene->mNumMeshes; ++meshIndex) {
+	for (const aiMesh* mesh : std::span(scene->mMeshes, scene->mNumMeshes)) {
 
-		const aiMesh* mesh = scene->mMeshes[meshIndex];
 		assert(mesh->HasNormals());   // GenSmoothNormals があるので必ず持っている
 
 		//   UV を持たないモデルがある（suzanne.obj など）
@@ -309,13 +314,12 @@ ModelData AssimpLoader::Load(const std::string& filePath) {
 		//     描画時に BaseVertexLocation = startVertex を足してもらう
 		modelData.indices.reserve(modelData.indices.size() + mesh->mNumFaces * 3);
 
-		for (uint32_t faceIndex = 0; faceIndex < mesh->mNumFaces; ++faceIndex) {
+		for (const aiFace& face : std::span(mesh->mFaces, mesh->mNumFaces)) {
 
-			const aiFace& face = mesh->mFaces[faceIndex];
 			assert(face.mNumIndices == 3);   // Triangulate 済みなので必ず3
 
-			for (uint32_t element = 0; element < face.mNumIndices; ++element) {
-				modelData.indices.push_back(face.mIndices[element]);
+			for (uint32_t index : std::span(face.mIndices, face.mNumIndices)) {
+				modelData.indices.push_back(index);
 			}
 		}
 		dstMesh.indexCount =

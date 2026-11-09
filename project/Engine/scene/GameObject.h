@@ -34,7 +34,7 @@ public:
 	void DrawInspector();
 
 	/// <summary>デバッグ用の線を全コンポーネントに積ませる</summary>
-	void DrawGizmos(PrimitiveDrawer& drawer);
+	void DrawGizmos(PrimitiveDrawer& drawer) const;
 
 	// ────────────────────────────────────────────────────────────────
 	// コンポーネント

@@ -32,7 +32,7 @@ public:
 	void Initialize() override;
 	void Update() override;
 	void DrawInspector() override;
-	void DrawGizmos(PrimitiveDrawer& drawer) override;
+	void DrawGizmos(PrimitiveDrawer& drawer) const override;
 	const char* GetTypeName() const override { return "ParticleEmitter"; }
 
 	// ───── 自分固有の機能 ─────

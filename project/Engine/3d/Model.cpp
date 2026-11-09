@@ -155,10 +155,10 @@ void Model::DrawMesh(const Mesh& mesh) {
 
     commandList->SetGraphicsRootConstantBufferView(
         Object3dPipeline::kRootParameterMaterial,
-        material.resource->GetGPUVirtualAddress());  // シェーダーにルートパラメータ[0]を介して、角メッシュのmaterialResourceアドレスを渡す
+        material.resource->GetGPUVirtualAddress());  // シェーダーにルートパラメータ[0]を介して、各メッシュのmaterialResourceアドレスを渡す
     commandList->SetGraphicsRootDescriptorTable(
         Object3dPipeline::kRootParameterTexture,
-        textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescripterHeap内の描画予定のTextureアドレスを渡す
+        textureManager_->GetSrvGpuHandle(material.textureSrvIndex)); // シェーダーにルートパラメータ[2]を介して、srvDescriptorHeap内の描画予定のTextureアドレスを渡す
 
     // 描画！(DrawCall/ドローコール)
     // インデックスを持っているモデル(球)と、持っていないモデル(obj)で呼ぶ関数が変わる

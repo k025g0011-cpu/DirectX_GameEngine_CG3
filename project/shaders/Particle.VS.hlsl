@@ -3,7 +3,6 @@
 struct ParticleForGPU
 {
     float32_t4x4 WVP;
-    float32_t4x4 World;
     float32_t4 color; // 16バイト
 };
 
@@ -15,6 +14,9 @@ struct VertexShaderInput // CPU -> VS
 {
     float32_t4 position : POSITION0;
     float32_t2 texcoord : TEXCOORD0;
+    
+    //   normal は使わないが、頂点バッファ（VertexData）と
+    //   ParticlePipeline の入力レイアウトが持っているので宣言だけ残す
     float32_t3 normal : NORMAL0;
 };
 
@@ -25,8 +27,6 @@ VertexShaderOutput main(VertexShaderInput input, uint32_t instanceId : SV_Instan
     VertexShaderOutput output;
     output.position = mul(input.position, gParticles[instanceId].WVP);
     output.texcoord = input.texcoord;
-    output.normal = normalize(
-        mul(input.normal, (float32_t3x3) gParticles[instanceId].World));
     output.color = gParticles[instanceId].color; // 粒ごとの色をそのまま PS へ渡す
     return output;
 }

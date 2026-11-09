@@ -54,7 +54,7 @@ public:
 	///   PrimitiveDrawer は線を溜めるだけなので、ここで呼んでも
 	///   パイプラインは切り替わらない
 	/// <param name="drawer">線を積む先</param>
-	virtual void DrawGizmos(PrimitiveDrawer& drawer) { (void)drawer; }
+	virtual void DrawGizmos(PrimitiveDrawer& drawer) const { (void)drawer; }
 
 	/// <summary>インスペクタの見出しに出す名前。実装必須</summary>
 	virtual const char* GetTypeName() const = 0;

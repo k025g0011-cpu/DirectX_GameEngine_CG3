@@ -35,7 +35,7 @@ protected:
 class DirectionalLightComponent : public LightComponent {
 public:
 	const char* GetTypeName() const override { return "DirectionalLight"; }
-	void DrawGizmos(PrimitiveDrawer& drawer) override;
+	void DrawGizmos(PrimitiveDrawer& drawer) const override;
 
 	/// <summary>GPU へ渡す構造体を組み立てる</summary>
 	DirectionalLight MakeGpuData() const;
@@ -48,7 +48,7 @@ class PointLightComponent : public LightComponent {
 public:
 	const char* GetTypeName() const override { return "PointLight"; }
 	void DrawInspector() override;
-	void DrawGizmos(PrimitiveDrawer& drawer) override;
+	void DrawGizmos(PrimitiveDrawer& drawer) const override;
 
 	PointLight MakeGpuData() const;
 
@@ -66,7 +66,7 @@ class SpotLightComponent : public LightComponent {
 public:
 	const char* GetTypeName() const override { return "SpotLight"; }
 	void DrawInspector() override;
-	void DrawGizmos(PrimitiveDrawer& drawer) override;
+	void DrawGizmos(PrimitiveDrawer& drawer) const override;
 
 	SpotLight MakeGpuData() const;
 

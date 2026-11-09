@@ -135,7 +135,7 @@ void GameObject::DrawInspector() {
 // デバッグ用の線
 //   Draw と同じく、自分では何もせずコンポーネントに配るだけ
 // ════════════════════════════════════════════════════════════════════
-void GameObject::DrawGizmos(PrimitiveDrawer& drawer) {
+void GameObject::DrawGizmos(PrimitiveDrawer& drawer) const {
 	if (!IsActiveInHierarchy()) {
 		return;
 	}

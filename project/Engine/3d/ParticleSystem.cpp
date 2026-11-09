@@ -100,7 +100,6 @@ void ParticleSystem::CreateInstancingResource() {
 	// 最初のフレームで不定にならないよう単位行列で埋めておく
 	for (uint32_t index = 0; index < maxInstanceCount_; ++index) {
 		instancingData_[index].WVP = MakeIdentity4x4();
-		instancingData_[index].World = MakeIdentity4x4();
 	}
 
 	// ────────────────────────────────────────────────────────────────
@@ -222,7 +221,6 @@ void ParticleSystem::Draw(const CameraData& camera) {
 		}
 
 		instancingData_[drawCount].WVP = worldMatrix * camera.viewProjectionMatrix;
-		instancingData_[drawCount].World = worldMatrix;
 
 		// 寿命によるフェード
 		//   Update で死んだ粒は消えているので、ここでは必ず lifeTime > 0

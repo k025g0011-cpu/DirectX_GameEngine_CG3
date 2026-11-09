@@ -97,7 +97,7 @@ void ParticleEmitter::DrawParticles(const CameraData& camera) {
 //   ① 自分の発生範囲
 //   ② 持っている場の効果範囲
 // ════════════════════════════════════════════════════════════════════
-void ParticleEmitter::DrawGizmos(PrimitiveDrawer& drawer) {
+void ParticleEmitter::DrawGizmos(PrimitiveDrawer& drawer) const {
 
 	if (!showGizmos_) {
 		return;
