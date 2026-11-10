@@ -192,10 +192,12 @@ void Sprite::Draw() {
 	//     2Dなのでカメラ（ビュー行列）は無い ＝ 単位行列
 	//     よって WVP = World × Projection
 	// ────────────────────────────────────────
+	//   回転は Vector3 のオイラー角版を使う（2D なので Z 軸まわり1つで足りる）
+	//     型名を書かないと、Quaternion 版とどちらか選べずエラーになる
 	Matrix4x4 worldMatrix = MakeAffineMatrix(
-		{ 1.0f, 1.0f, 1.0f },                      // 拡縮は頂点側でやるので単位
-		{ 0.0f, 0.0f, rotation_ },                 // 画面に垂直な軸（Z）まわりの回転
-		{ position_.x, position_.y, 0.0f });       // 画面上の位置
+		Vector3{ 1.0f, 1.0f, 1.0f },                      // 拡縮は頂点側でやるので単位
+		Vector3{ 0.0f, 0.0f, rotation_ },                 // 画面に垂直な軸（Z）まわりの回転
+		Vector3{ position_.x, position_.y, 0.0f });       // 画面上の位置
 
 	transformationMatrixData_->WVP = worldMatrix * projectionMatrix_;
 	transformationMatrixData_->World = worldMatrix;

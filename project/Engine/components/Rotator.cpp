@@ -9,14 +9,6 @@
 #endif
 
 // ════════════════════════════════════════════════════════════════════
-// このファイルの中だけで使う定数
-// ════════════════════════════════════════════════════════════════════
-namespace {
-	constexpr float kPi = 3.14159265358979323846f;
-	constexpr float kRadiansToDegrees = 180.0f / kPi;
-}
-
-// ════════════════════════════════════════════════════════════════════
 // 更新
 //   GameObject::Update() から毎フレーム呼ばれる
 // ════════════════════════════════════════════════════════════════════
@@ -44,9 +36,9 @@ void Rotator::DrawInspector() {
 
 	// 度数法でも見えるようにしておく（ラジアンは直感的でないため）
 	ImGui::Text("= %.0f, %.0f, %.0f deg/s",
-		rotationSpeed_.x * kRadiansToDegrees,
-		rotationSpeed_.y * kRadiansToDegrees,
-		rotationSpeed_.z * kRadiansToDegrees);
+		rotationSpeed_.x * kRadToDeg,
+		rotationSpeed_.y * kRadToDeg,
+		rotationSpeed_.z * kRadToDeg);
 
 	if (ImGui::Button("停止")) {
 		rotationSpeed_ = { 0.0f, 0.0f, 0.0f };

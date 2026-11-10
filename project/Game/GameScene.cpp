@@ -260,15 +260,13 @@ void GameScene::Update() {
 	// ════════════════════════════════════════
 	// ⑦ UVTransform を反映する
 	// ════════════════════════════════════════
-	Matrix4x4 uvTransformMatrixModel = MakeAffineMatrix(
-		uvTransformModel_.scale, uvTransformModel_.rotate, uvTransformModel_.translate);
+	Matrix4x4 uvTransformMatrixModel = MakeUVMatrix(uvTransformModel_);
 
 	for (uint32_t i = 0; i < sphereModel_->GetMaterialCount(); ++i) {
 		sphereModel_->GetMaterialData(i)->uvTransform = uvTransformMatrixModel;
 	}
 
-	Matrix4x4 uvTransformMatrixSprite = MakeAffineMatrix(
-		uvTransformSprite_.scale, uvTransformSprite_.rotate, uvTransformSprite_.translate);
+	Matrix4x4 uvTransformMatrixSprite = MakeUVMatrix(uvTransformSprite_);
 
 	sprite_.GetMaterialData()->uvTransform = uvTransformMatrixSprite;
 }
@@ -488,7 +486,7 @@ void GameScene::DrawSettingsPanel() {
 		// ───── モデルの UV（Model 共有データなので詳細ではなくここ） ─────
 		ImGui::DragFloat2("ModelUVTranslate", &uvTransformModel_.translate.x, 0.01f, -10.0f, 10.0f);
 		ImGui::DragFloat2("ModelUVScale", &uvTransformModel_.scale.x, 0.01f, -10.0f, 10.0f);
-		ImGui::SliderAngle("ModelUVRotate", &uvTransformModel_.rotate.z);
+		ImGui::SliderAngle("ModelUVRotate", &uvTransformModel_.rotate);
 		ImGui::Separator();
 
 
@@ -508,7 +506,7 @@ void GameScene::DrawSettingsPanel() {
 
 		ImGui::DragFloat2("SpriteUVTranslate", &uvTransformSprite_.translate.x, 0.01f, -10.0f, 10.0f);
 		ImGui::DragFloat2("SpriteUVScale", &uvTransformSprite_.scale.x, 0.01f, -10.0f, 10.0f);
-		ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite_.rotate.z);
+		ImGui::SliderAngle("SpriteUVRotate", &uvTransformSprite_.rotate);
 
 		// ───── テクスチャの切り出し（ピクセル指定） ─────
 		ImGui::Separator();

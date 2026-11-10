@@ -312,7 +312,7 @@ Matrix4x4 MakeRotateZMatrix(float radian) {
 	return result;
 }
 
-// --- 3次元アフィン変換行列の作成 ---
+// --- 3次元アフィン変換行列の作成（オイラー角版） ---
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
 	// 1. 各成分の行列を作成 (既存の関数を利用)
 	Matrix4x4 matScale = MakeScaleMatrix(scale);
@@ -332,6 +332,27 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 	Matrix4x4 result = matScale * matRotate * matTranslate;
 
 	return result;
+}
+
+// --- 3次元アフィン変換行列の作成（クォータニオン版） ---
+//   オイラー角版との違いは、回転行列の作り方だけ
+//   合成の順序（Scale → Rotate → Translate）は同じ
+Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rotate, const Vector3& translate) {
+	return MakeScaleMatrix(scale) * MakeRotateMatrix(rotate) * MakeTranslateMatrix(translate);
+}
+
+// --- UV 変換行列の作成 ---
+//   中身は 3D のアフィン変換と同じ。使わない次元に無害な値を入れるだけ
+//     scale.z = 1    … 潰さない（0 にすると行列が退化する）
+//     rotate  = z のみ … UV 平面は xy なので、回転軸は z しかない
+//     translate.z = 0 … ずらさない
+Matrix4x4 MakeUVMatrix(const UVTransform& uv) {
+	//   UV の回転は Z 軸まわり1つなので、オイラー角版を使う
+	//     型名を省くと Quaternion 版とあいまいになる
+	return MakeAffineMatrix(
+		Vector3{ uv.scale.x, uv.scale.y, 1.0f },
+		Vector3{ 0.0f, 0.0f, uv.rotate },
+		Vector3{ uv.translate.x, uv.translate.y, 0.0f });
 }
 
 // ════════════════════════════════════════════════════════════════════

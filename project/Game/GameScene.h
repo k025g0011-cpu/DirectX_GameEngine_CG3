@@ -135,9 +135,7 @@ private:
 	// ────────────────────────────────────────────────────────────────
 	// ImGui で操作する値
 	// ────────────────────────────────────────────────────────────────
-	Transform uvTransformModel_{
-		{ 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
-	Transform uvTransformSprite_{
-		{ 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
+	UVTransform uvTransformModel_{};
+	UVTransform uvTransformSprite_{};
 
 };

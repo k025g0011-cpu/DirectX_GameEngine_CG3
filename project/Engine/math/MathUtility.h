@@ -3,6 +3,7 @@
 #include "Vector2.h"
 #include "Vector3.h"
 #include "Vector4.h"
+#include "Quaternion.h"
 #include <numbers>
 
 
@@ -10,15 +11,33 @@
 /// 変換データ
 /// </summary>
 struct Transform {
-    Vector3 scale;
-    Vector3 rotate;
-    Vector3 translate;
+    Vector3 scale{ 1.0f, 1.0f, 1.0f };
+    Vector3 rotate{ 0.0f, 0.0f, 0.0f };
+    Vector3 translate{ 0.0f, 0.0f, 0.0f };
 };
 
+/// <summary>
+/// 変換データ（UV用）
+/// </summary>
+/*
+3D の Transform を流用すると
+ scale.z / rotate.x / rotate.y / translate.z が永久に使われない溜め分ける
+*/
+struct UVTransform{
+	Vector2 scale{ 1.0f, 1.0f };
+    float rotate = 0.0f; // Z軸まわり（ラジアン）
+	Vector2 translate{ 0.0f, 0.0f };
+};
+
+
 // ════════════════════════════════════════
-// 円周率
+// 円周率と角度の変換
+//   inline constexpr なので、ヘッダに書いても多重定義にならない
 // ════════════════════════════════════════
 inline constexpr float kPi = std::numbers::pi_v<float>;
+
+inline constexpr float kDegToRad = kPi / 180.0f;   // 度 → ラジアン
+inline constexpr float kRadToDeg = 180.0f / kPi;   // ラジアン → 度
 
 // ============================================
 // Vector3 演算子
@@ -131,8 +150,16 @@ Matrix4x4 MakeRotateZMatrix(float radian);
 //    向きとしては正しいが、数値は一意に決まらない
 Vector3 MakeEulerXYZFromMatrix(const Matrix4x4& rotation);
 
-// --- 3次元アフィン変換行列の作成 ---
+// --- 3次元アフィン変換行列の作成（オイラー角版） ---
+//   ※ Transform::rotate を Quaternion にしたら、最終的には下の版だけを残す
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate);
+
+// --- 3次元アフィン変換行列の作成（クォータニオン版） ---
+Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rotate, const Vector3& translate);
+
+// --- UV 変換行列の作成 ---
+//   シェーダの gMaterial.uvTransform に渡すもの
+Matrix4x4 MakeUVMatrix(const UVTransform& uv);
 
 // --- アフィン変換行列を scale / rotate / translate に分解する ---
 //   MakeAffineMatrix の逆。rotate は XYZ 順のオイラー角
