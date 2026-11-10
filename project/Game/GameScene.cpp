@@ -10,7 +10,7 @@
 #include "Model.h"
 #include "PrimitiveModel.h"
 #include "WinApp.h"
-
+#include "Quaternion.h"
 // コンポーネントファイル
 #include "LightComponent.h"
 #include "MeshRenderer.h"
@@ -63,7 +63,6 @@ void GameScene::Initialize(const EngineContext& context) {
 	GameObject* testParticle = CreateGameObject("testParticle");
 	testParticle->GetTransform().translate = { 0.0f, 5.0f, 0.0f };
 	testParticle->AddComponent<ParticleEmitter>();
-	
 
 	// ════════════════════════════════════════
 	// スプライト

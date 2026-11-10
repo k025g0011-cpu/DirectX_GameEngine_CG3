@@ -334,6 +334,46 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Ve
 	return result;
 }
 
+// ════════════════════════════════════════════════════════════════════
+// 回転行列からオイラー角（XYZ順）を逆算する
+//
+//   R = Rx * Ry * Rz を展開すると、各成分はこうなる
+//     （s = sin, c = cos, 添字は軸）
+//
+//     m[0][0] = cy*cz          m[0][1] = cy*sz          m[0][2] = -sy
+//     m[1][2] = sx*cy
+//     m[2][1] = cx*sy*sz - sx*cz
+//     m[2][2] = cx*cy
+//
+//   ・m[0][2] は sy だけでできている       → y が直接求まる
+//   ・m[1][2] / m[2][2] は cy が共通       → 約分されて tan(x) になる
+//   ・m[0][1] / m[0][0] も cy が共通       → 約分されて tan(z) になる
+//
+//   atan2 を使うのは、tan だけだと ±180度の区別がつかないため
+// ════════════════════════════════════════════════════════════════════
+Vector3 MakeEulerXYZFromMatrix(const Matrix4x4& rotation) {
+
+	Vector3 result{};
+
+	result.y = std::asin(std::clamp(-rotation.m[0][2], -1.0f, 1.0f));
+
+	//   ジンバルロック
+	//     cos(y) が 0 に近いと、上の「約分」の分母が 0 になって x と z が求まらない
+	//     幾何的にも、このとき X 回転と Z 回転は同じ見た目になり、答えが一つに定まらない
+	//     → z を 0 に決め打ちして、x に全部押し付ける（よく使われる約束）
+	if (std::abs(rotation.m[0][2]) < 0.9999f) {
+		result.x = std::atan2(rotation.m[1][2], rotation.m[2][2]);
+		result.z = std::atan2(rotation.m[0][1], rotation.m[0][0]);
+	} else {
+		//   z = 0 とすると m[1][1] = cx, m[2][1] = -sx になるので、ここから x が出る
+		result.x = std::atan2(-rotation.m[2][1], rotation.m[1][1]);
+		result.z = 0.0f;
+	}
+
+	return result;
+}
+
+
 // --- アフィン変換行列を scale / rotate / translate に分解する ---
 //   MakeAffineMatrix の逆の操作。モデルファイルのノード行列を
 //   GameObject の Transform に移すために使う
@@ -378,35 +418,10 @@ Transform DecomposeAffineMatrix(const Matrix4x4& matrix) {
 
 	// ════════════════════════════════════════
 	// ④ 回転行列からオイラー角（XYZ順）を逆算する
-	//
-	//   R = Rx * Ry * Rz を展開すると、各成分はこうなる
-	//     （s = sin, c = cos, 添字は軸）
-	//
-	//     m[0][0] = cy*cz          m[0][1] = cy*sz          m[0][2] = -sy
-	//     m[1][2] = sx*cy
-	//     m[2][1] = cx*sy*sz - sx*cz
-	//     m[2][2] = cx*cy
-	//
-	//   ・m[0][2] は sy だけでできている       → y が直接求まる
-	//   ・m[1][2] / m[2][2] は cy が共通       → 約分されて tan(x) になる
-	//   ・m[0][1] / m[0][0] も cy が共通       → 約分されて tan(z) になる
-	//
-	//   atan2 を使うのは、tan だけだと ±180度の区別がつかないため
+	//   式の中身は MakeEulerXYZFromMatrix に出した
+	//   クォータニオン側からも同じ処理を使うため
 	// ════════════════════════════════════════
-	result.rotate.y = std::asin(std::clamp(-rotation.m[0][2], -1.0f, 1.0f));
-
-	//   ジンバルロック
-	//     cos(y) が 0 に近いと、上の「約分」の分母が 0 になって x と z が求まらない
-	//     幾何的にも、このとき X 回転と Z 回転は同じ見た目になり、答えが一つに定まらない
-	//     → z を 0 に決め打ちして、x に全部押し付ける（よく使われる約束）
-	if (std::abs(rotation.m[0][2]) < 0.9999f) {
-		result.rotate.x = std::atan2(rotation.m[1][2], rotation.m[2][2]);
-		result.rotate.z = std::atan2(rotation.m[0][1], rotation.m[0][0]);
-	} else {
-		//   z = 0 とすると m[1][1] = cx, m[2][1] = -sx になるので、ここから x が出る
-		result.rotate.x = std::atan2(-rotation.m[2][1], rotation.m[1][1]);
-		result.rotate.z = 0.0f;
-	}
+	result.rotate = MakeEulerXYZFromMatrix(rotation);
 
 	return result;
 }

@@ -125,6 +125,12 @@ Matrix4x4 MakeRotateYMatrix(float radian);
 // 3. Z軸回転行列
 Matrix4x4 MakeRotateZMatrix(float radian);
 
+// --- 回転行列からオイラー角（XYZ順）を取り出す ---
+//   MakeRotateXYZMatrix の逆。スケールを含まない「回転だけ」の行列を渡すこと
+//   ※ ジンバルロック（Y が ±90度付近）では、元の値と違う組が返ることがある
+//    向きとしては正しいが、数値は一意に決まらない
+Vector3 MakeEulerXYZFromMatrix(const Matrix4x4& rotation);
+
 // --- 3次元アフィン変換行列の作成 ---
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate);
 
