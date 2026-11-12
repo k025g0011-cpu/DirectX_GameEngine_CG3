@@ -52,10 +52,12 @@ void GameScene::Initialize(const EngineContext& context) {
 	sphereObject_ = CreateGameObject("Sphere1");
 	sphereObject_->GetTransform().translate = { 0.0f, 0.0f, 0.0f };
 	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
+	sphereObject_->AddComponent<Rotator>();
 
 	sphereObject_ = CreateGameObject("Sphere2");
 	sphereObject_->GetTransform().translate = { 0.0f, 3.0f, 0.0f };
 	sphereObject_->AddComponent<MeshRenderer>(sphereModel_);
+
 	// ════════════════════════════════════════
 	// パーティクル
 	//   他のオブジェクトと同じ3手順：箱を作る → 位置を決める → 機能を足す
@@ -118,7 +120,8 @@ void GameScene::Initialize(const EngineContext& context) {
 	//   太陽（真上から下へ）。+Z を下に向けるので X 軸まわりに 90度
 	GameObject* sunObject = CreateGameObject("Sun");
 	sunObject->GetTransform().translate = { 0.0f, 5.0f, 0.0f };
-	sunObject->GetTransform().rotate = { kPi / 2.0f, 0.0f, 0.0f };
+	sunObject->GetTransform().rotate =
+		MakeRotateAxisAngleQuaternion({ 1.0f, 0.0f, 0.0f }, kPi / 2.0f);
 	sunObject->AddComponent<DirectionalLightComponent>();
 
 	//   点光源
@@ -129,7 +132,8 @@ void GameScene::Initialize(const EngineContext& context) {
 	//   スポットライト。真下を向かせると床に円が落ちて見やすい
 	GameObject* spotObject = CreateGameObject("Spot");
 	spotObject->GetTransform().translate = { 0.0f, 4.0f, 0.0f };
-	spotObject->GetTransform().rotate = { kPi / 2.0f, 0.0f, 0.0f };
+	spotObject->GetTransform().rotate =
+		MakeRotateAxisAngleQuaternion({ 1.0f, 0.0f, 0.0f }, kPi / 2.0f);
 	spotObject->AddComponent<SpotLightComponent>();
 }
 

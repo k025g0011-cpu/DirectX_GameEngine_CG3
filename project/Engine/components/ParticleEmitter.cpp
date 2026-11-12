@@ -153,7 +153,6 @@ Particle ParticleEmitter::MakeParticle() {
 	Particle particle{};
 
 	particle.transform.scale = { particleScale_, particleScale_, particleScale_ };
-	particle.transform.rotate = { 0.0f, 0.0f, 0.0f };
 
 	// 軸ごとに別の乱数を引くので、先にオフセットを組み立ててから足す
 	const Vector3 offset = {

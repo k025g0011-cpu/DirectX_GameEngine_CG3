@@ -14,8 +14,9 @@ namespace {
 void DebugCamera::Initialize(Input* input, int32_t clientWidth, int32_t clientHeight) {
 	input_ = input;
 
-	// 累積回転行列は「回転なし」＝単位行列から始める
-	matRot_ = MakeIdentity4x4();
+	// 「回転なし」から始める
+	//   Quaternion の既定値も単位だが、再初期化できるよう明示的に入れる
+	rotation_ = MakeIdentityQuaternion();
 
 	// 射影行列は画角とアスペクト比で決まり、カメラの位置・向きとは無関係
 	// 毎フレーム変わらないのでここで1回だけ計算する
@@ -66,8 +67,8 @@ void DebugCamera::UpdateMouseControl() {
 			// ─── パン：注視点をカメラのローカルXY方向へ動かす ───
 			// 掴んだ景色が指に付いてくる感覚にするため X は符号を反転する
 			Vector3 move = { -mouseMove.x * moveSpeed_, mouseMove.y * moveSpeed_, 0.0f };
-			// ローカル方向をワールド方向へ変換（平行移動成分は無視される）
-			target_ += TransformNormal(move, matRot_);
+			// ローカル方向をワールド方向へ変換（行列を作らずに回せる）
+			target_ += RotateVector(move, rotation_);
 
 		} else {
 			// ─── オービット：ターンテーブル方式 ───
@@ -77,7 +78,13 @@ void DebugCamera::UpdateMouseControl() {
 			// ピッチはカメラのローカルX軸まわり（左に掛ける＝先に適用）
 			// ヨーはワールドY軸まわり        （右に掛ける＝後に適用）
 			// こうすると水平線が傾かない（Blender の既定の挙動）
-			matRot_ = MakeRotateXMatrix(pitch) * matRot_ * MakeRotateYMatrix(yaw);
+			rotation_ = MakeRotateAxisAngleQuaternion({ 1.0f, 0.0f, 0.0f }, pitch)
+				* rotation_
+				* MakeRotateAxisAngleQuaternion({ 0.0f, 1.0f, 0.0f }, yaw);
+
+			// 毎フレーム掛け算するので、誤差がたまる前に長さを 1 に戻す
+			//   行列のままだと、ここで3本の軸を直交に戻す処理が必要だった
+			rotation_ = Normalize(rotation_);
 		}
 	}
 
@@ -108,7 +115,7 @@ void DebugCamera::UpdateKeyboardMove(float deltaTime) {
 	if (input_->PushKey(DIK_Q)) { keyMove.y -= speed; }   // 下
 
 	// 角度は毎フレーム変わるので、移動ベクトルは毎回変換し直す（キャッシュ不可）
-	target_ += TransformNormal(keyMove, matRot_);
+	target_ += RotateVector(keyMove, rotation_);
 }
 
 // ════════════════════════════════════════
@@ -120,15 +127,13 @@ void DebugCamera::UpdateMatrices() {
 
 	// ピボット回転：注視点から distance_ だけ後ろへ下がった位置がカメラの座標
 	// ローカルの {0, 0, -distance_} を現在の姿勢で回せば、自動的に円軌道になる
-	const Vector3 offset = TransformNormal({ 0.0f, 0.0f, -distance_ }, matRot_);
+	const Vector3 offset = RotateVector({ 0.0f, 0.0f, -distance_ }, rotation_);
 	worldPosition_ = target_ + offset;
 
-	// 座標から平行移動行列を計算する
-	Matrix4x4 translateMatrix = MakeTranslateMatrix(worldPosition_);
-
-	// 累積回転行列と平行移動行列からワールド行列を計算する
+	// 向きと位置からワールド行列を作る
 	// 「原点で回してから目的地へ運ぶ」順序。逆にすると原点の周りを公転してしまう
-	Matrix4x4 worldMatrix = matRot_ * translateMatrix;
+	const Matrix4x4 worldMatrix =
+		MakeRotateMatrix(rotation_) * MakeTranslateMatrix(worldPosition_);
 
 	// ワールド行列の逆行列をビュー行列に代入する
 	viewMatrix_ = Inverse(worldMatrix);

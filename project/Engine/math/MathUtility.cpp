@@ -312,33 +312,23 @@ Matrix4x4 MakeRotateZMatrix(float radian) {
 	return result;
 }
 
-// --- 3次元アフィン変換行列の作成（オイラー角版） ---
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate) {
-	// 1. 各成分の行列を作成 (既存の関数を利用)
-	Matrix4x4 matScale = MakeScaleMatrix(scale);
-
-	Matrix4x4 matRotateX = MakeRotateXMatrix(rotate.x);
-	Matrix4x4 matRotateY = MakeRotateYMatrix(rotate.y);
-	Matrix4x4 matRotateZ = MakeRotateZMatrix(rotate.z);
-
-	Matrix4x4 matTranslate = MakeTranslateMatrix(translate);
-
-	// 2. 回転行列を合成（X → Y → Z の順。行ベクトル規約なので左から順に適用される）
-	//	　　DecomposeAffineMatrix はこの順序を前提に逆算する。変えるなら両方直す
-	Matrix4x4 matRotate = matRotateX * matRotateY * matRotateZ;
-
-	// 3. 全てを合成 (Scaling * Rotation * Translation)
-	// 既存の operator* を使用
-	Matrix4x4 result = matScale * matRotate * matTranslate;
-
-	return result;
-}
-
-// --- 3次元アフィン変換行列の作成（クォータニオン版） ---
-//   オイラー角版との違いは、回転行列の作り方だけ
-//   合成の順序（Scale → Rotate → Translate）は同じ
+// --- 3次元アフィン変換行列の作成 ---
+//   合成の順序は Scale → Rotate → Translate
+//     行ベクトル規約（v × M）なので、左に書いたものが先に効く
+//   オイラー角から作りたいときは MakeRotateXYZQuaternion を通すこと
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rotate, const Vector3& translate) {
 	return MakeScaleMatrix(scale) * MakeRotateMatrix(rotate) * MakeTranslateMatrix(translate);
+}
+
+// --- 2次元アフィン変換行列の作成 ---
+//   使わない次元には「何もしない値」を入れる
+//     scale.z = 1     … 0 にすると行列式が 0 になり、逆行列が存在しなくなる
+//     translate.z = 0 … 奥行きには動かさない
+//   回転行列を3つ作らずに済むので、3D 版より軽い
+Matrix4x4 MakeAffineMatrix2D(const Vector2& scale, float rotate, const Vector2& translate) {
+	return MakeScaleMatrix({ scale.x, scale.y, 1.0f })
+		* MakeRotateZMatrix(rotate)
+		* MakeTranslateMatrix({ translate.x, translate.y, 0.0f });
 }
 
 // --- UV 変換行列の作成 ---
@@ -347,12 +337,9 @@ Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rotate, const
 //     rotate  = z のみ … UV 平面は xy なので、回転軸は z しかない
 //     translate.z = 0 … ずらさない
 Matrix4x4 MakeUVMatrix(const UVTransform& uv) {
-	//   UV の回転は Z 軸まわり1つなので、オイラー角版を使う
-	//     型名を省くと Quaternion 版とあいまいになる
-	return MakeAffineMatrix(
-		Vector3{ uv.scale.x, uv.scale.y, 1.0f },
-		Vector3{ 0.0f, 0.0f, uv.rotate },
-		Vector3{ uv.translate.x, uv.translate.y, 0.0f });
+	//   UVTransform と MakeAffineMatrix2D は中身が同じ形
+	//   それでも関数を分けておくのは、呼ぶ側で「UV の話だ」と分かるようにするため
+	return MakeAffineMatrix2D(uv.scale, uv.rotate, uv.translate);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -438,11 +425,10 @@ Transform DecomposeAffineMatrix(const Matrix4x4& matrix) {
 	rotation.m[2][0] = unitZ.x; rotation.m[2][1] = unitZ.y; rotation.m[2][2] = unitZ.z;
 
 	// ════════════════════════════════════════
-	// ④ 回転行列からオイラー角（XYZ順）を逆算する
-	//   式の中身は MakeEulerXYZFromMatrix に出した
-	//   クォータニオン側からも同じ処理を使うため
+	// ④ 回転行列から Quaternion を取り出す
+	//   オイラー角と違い、情報が落ちない
 	// ════════════════════════════════════════
-	result.rotate = MakeEulerXYZFromMatrix(rotation);
+	result.rotate = MakeQuaternionFromMatrix(rotation);
 
 	return result;
 }

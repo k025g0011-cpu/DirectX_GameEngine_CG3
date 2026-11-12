@@ -193,6 +193,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClCompile Include="Engine\base\CrashHandler.cpp" />
     <ClCompile Include="Engine\base\DirectXCommon.cpp" />
     <ClCompile Include="Engine\base\GameTime.cpp" />
+    <ClCompile Include="Engine\base\ImGuiManager.cpp" />
     <ClCompile Include="Engine\base\Logger.cpp" />
     <ClCompile Include="Engine\base\RenderTexture.cpp" />
     <ClCompile Include="Engine\base\TextureManager.cpp" />
@@ -264,6 +265,7 @@ copy "$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\dxil.dll" "$(TargetDir)dx
     <ClInclude Include="Engine\base\CrashHandler.h" />
     <ClInclude Include="Engine\base\DirectXCommon.h" />
     <ClInclude Include="Engine\base\GameTime.h" />
+    <ClInclude Include="Engine\base\ImGuiManager.h" />
     <ClInclude Include="Engine\base\Logger.h" />
     <ClInclude Include="Engine\base\RenderTexture.h" />
     <ClInclude Include="Engine\base\TextureManager.h" />

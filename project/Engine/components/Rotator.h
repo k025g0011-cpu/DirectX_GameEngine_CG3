@@ -25,7 +25,16 @@ public:
 	const Vector3& GetRotationSpeed() const { return rotationSpeed_; }
 	void SetRotationSpeed(const Vector3& rotationSpeed) { rotationSpeed_ = rotationSpeed; }
 
+	/// <summary>自分の軸で回すか。false ならワールドの軸で回す</summary>
+	///   Quaternion にしたことで選べるようになった
+	///   オイラー角のときは「X だけローカル、Z だけワールド」と固定だった
+	bool IsLocalAxis() const { return useLocalAxis_; }
+	void SetLocalAxis(bool useLocal) { useLocalAxis_ = useLocal; }
+
 private:
 	// 毎秒の回転量（ラジアン）
 	Vector3 rotationSpeed_{ 0.0f, 1.0f, 0.0f };
+
+	// 回す軸をどちらで取るか
+	bool useLocalAxis_ = true;
 };

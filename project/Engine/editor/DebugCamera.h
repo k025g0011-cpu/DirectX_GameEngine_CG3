@@ -74,8 +74,10 @@ private:
 	Input* input_ = nullptr;
 
 	// ───── カメラの状態（これが本体） ─────
-	// 累積回転行列（オイラー角 rotation_ は廃止）
-	Matrix4x4 matRot_{};
+	// 向きそのもの。毎フレーム掛け算して積み上げる
+	//   行列（64バイト）から Quaternion（16バイト）に変えた
+	//   誤差は Normalize 1回で落とせる。行列だと軸の直交性を回復する処理が要る
+	Quaternion rotation_{};
 	// ピボットポイント（回転と移動の中心）
 	Vector3 target_ = { 0.0f, 1.0f, 0.0f };
 	// 注視点からカメラまでの距離

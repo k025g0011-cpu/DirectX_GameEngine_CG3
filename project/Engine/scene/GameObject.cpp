@@ -7,6 +7,18 @@
 #include "externals/imgui/imgui.h"
 #endif
 
+namespace {
+
+	/// <summary>2つのクォータニオンが「同じ値か」を調べる</summary>
+	///   「同じ向きか」ではなく「書き換えられていないか」を見たいので、
+	///   許容誤差を入れずに厳密に比べるのが正しい
+	///     誤差を許すと、わずかに回されたときに表示が更新されなくなる
+	bool IsSameQuaternion(const Quaternion& a, const Quaternion& b) {
+		return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+	}
+
+}   // namespace
+
 // ════════════════════════════════════════════════════════════════════
 // 初期化
 // ════════════════════════════════════════════════════════════════════
@@ -103,8 +115,28 @@ void GameObject::DrawInspector() {
 
 	// ───── Transform（コンポーネントではないので手書き） ─────
 	if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+
 		ImGui::DragFloat3("translate", &transform_.translate.x, 0.01f);
-		ImGui::DragFloat3("rotate", &transform_.rotate.x, 0.01f);
+
+		// ────────────────────────────────────────────────────────────
+		// 回転：内部は Quaternion、表示はオイラー角
+		//   外から回転が変わったときだけ、表示用の角度を作り直す
+		//     Rotator が回している / モデルから読み込んだ / コードで代入した
+		//   自分がドラッグして書き込んだ値のままなら、作り直さない
+		//     作り直すと、同じ向きでも別の角度の組が出てきて数字が飛ぶ
+		// ────────────────────────────────────────────────────────────
+		if (!IsSameQuaternion(transform_.rotate, editorEulerSource_)) {
+			editorEuler_ = MakeEulerXYZFromQuaternion(transform_.rotate);
+			editorEulerSource_ = transform_.rotate;
+		}
+
+		if (ImGui::DragFloat3("rotate", &editorEuler_.x, 0.01f)) {
+			transform_.rotate = MakeRotateXYZQuaternion(editorEuler_);
+
+			//   いま書き込んだ値を覚えておく。次のフレームで「変わっていない」と判断させる
+			editorEulerSource_ = transform_.rotate;
+		}
+
 		ImGui::DragFloat3("scale", &transform_.scale.x, 0.01f);
 	}
 

@@ -20,12 +20,8 @@
 #include "PrimitiveDrawer.h"
 #include "EngineContext.h"
 #include "GameScene.h"
+#include "ImGuiManager.h"
 
-#ifdef USE_IMGUI
-#include "externals/imgui/imgui.h"
-#include "externals/imgui/imgui_impl_dx12.h"
-#include "externals/imgui/imgui_impl_win32.h"
-#endif
 
 // ════════════════════════════════════════════════════════════════════
 // Windows アプリのエントリーポイント
@@ -100,87 +96,10 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	gameTime.Initialize();
 
 	// ════════════════════════════════════════
-	// ImGui の初期化
+	// ImGui（初期化の中身は ImGuiManager が持つ）
 	// ════════════════════════════════════════
-#ifdef USE_IMGUI
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGuiIO& io = ImGui::GetIO();
-	io.ConfigWindowsMoveFromTitleBarOnly = true;   // ウィンドウはタイトルバーでのみ移動
-
-	// ────────────────────────────────────────────────────────────────
-	// パネルのドッキング（結合・分割・サイズ変更）を許可する
-	//   このフラグだけでは見た目は変わらない。
-	//   いまのパネルは SetNextWindowPos / NoMove / NoResize で固定しているので、
-	//   ImGui 側が「動かせないウィンドウ」と判断してドッキング対象にならない
-	//     → 固定をやめるのは #16.8-2
-	//
-	//   ※ ViewportsEnable（パネルをウィンドウの外へ切り離す機能）は入れない
-	//     DX12 ではパネルごとのスワップチェーン管理と
-	//     UpdatePlatformWindows / RenderPlatformWindowsDefault の呼び出しが必要になる
-	// ────────────────────────────────────────────────────────────────
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-
-	ImGui::StyleColorsDark();
-
-	// ────────────────────────────────────────────────────────────────
-	// 日本語フォントを読み込む
-	//   既定のフォントは ASCII のみ。日本語を出すには別途読む必要がある
-	// ────────────────────────────────────────────────────────────────
-	ImFont* japaneseFont = io.Fonts->AddFontFromFileTTF(
-		"C:/Windows/Fonts/meiryo.ttc",          // メイリオ（Windows 標準）
-		18.0f,                                   // ピクセルサイズ
-		nullptr,                                 // フォント設定（既定でよい）
-		io.Fonts->GetGlyphRangesJapanese());     // 用意する文字の範囲
-	assert(japaneseFont != nullptr);
-
-	ImGui_ImplWin32_Init(winApp.GetHwnd());
-
-	// ────────────────────────────────────────────────────────────────
-	// DX12 バックエンドの初期化
-	//   新しい ImGui は実行中にテクスチャを増減するため、
-	//   SRV を起動時に1枠渡すのではなく、必要なときにアプリへ要求してくる
-	//     → 確保／解放の関数をこちらから渡す
-	// ────────────────────────────────────────────────────────────────
-	ImGui_ImplDX12_InitInfo initInfo{};
-	initInfo.Device = dxCommon.GetDevice().Get();
-	//   テクスチャの転送に使う。新しいバックエンドは自分で GPU へ送るので必須
-	initInfo.CommandQueue = dxCommon.GetCommandQueue().Get();
-	initInfo.NumFramesInFlight = DirectXCommon::kBackBufferCount;
-	initInfo.RTVFormat = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;   // RTV のフォーマットと一致させる
-	initInfo.DSVFormat = DXGI_FORMAT_UNKNOWN;               // ImGui は深度を使わない
-	initInfo.SrvDescriptorHeap = dxCommon.GetSrvDescriptorHeap().Get();
-
-	//   コールバックに「誰に頼むか」を伝えるための置き場
-	//     コールバックは生の関数ポインタなので、this のような文脈を持てない
-	initInfo.UserData = &dxCommon;
-
-	//   SRV を1枠ください、と言われたときの処理
-	initInfo.SrvDescriptorAllocFn =
-		[](ImGui_ImplDX12_InitInfo* info,
-			D3D12_CPU_DESCRIPTOR_HANDLE* outCpuHandle,
-			D3D12_GPU_DESCRIPTOR_HANDLE* outGpuHandle) {
-
-				DirectXCommon* dx = static_cast<DirectXCommon*>(info->UserData);
-
-				const uint32_t index = dx->AllocateSrv();
-				*outCpuHandle = dx->GetSrvCpuDescriptorHandle(index);
-				*outGpuHandle = dx->GetSrvGpuDescriptorHandle(index);
-		};
-
-	//   SRV を返します、と言われたときの処理
-	initInfo.SrvDescriptorFreeFn =
-		[](ImGui_ImplDX12_InitInfo*,
-			D3D12_CPU_DESCRIPTOR_HANDLE,
-			D3D12_GPU_DESCRIPTOR_HANDLE) {
-
-				// いまの DirectXCommon は SRV を前から順に配るだけで、返却の仕組みがない
-				//   何もしなくても破綻はしない（使い終わった枠が再利用されないだけ）
-				//   ※ 実行中にテクスチャを大量に作り直すようになったら、空き管理が必要
-		};
-
-	ImGui_ImplDX12_Init(&initInfo);
-#endif
+	ImGuiManager imGuiManager;
+	imGuiManager.Initialize(&winApp, &dxCommon);
 
 	// ════════════════════════════════════════════════════════════════
 	// 道具を束ねてシーンに渡す
@@ -218,29 +137,19 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		//   全画面には×ボタンが無いので、これが唯一の終了手段になる
 		bool requestQuit = input.TriggerKey(DIK_ESCAPE);
 
-#ifdef USE_IMGUI
 		// ImGui の入力欄に文字を打っている最中は無視する
 		//   オブジェクト名を打っている途中で落ちると困る
-		if (ImGui::GetIO().WantTextInput) {
+		if (imGuiManager.IsTextInputActive()) {
 			requestQuit = false;
 		}
-#endif
 
 		if (requestQuit) {
 			break;
 		}
 
-#ifdef USE_IMGUI
-		ImGui_ImplDX12_NewFrame();
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
-#endif
+		imGuiManager.Begin();
 		gameScene.Update();
-
-#ifdef USE_IMGUI
-		// ImGui の内部コマンドを生成する（描画より前）
-		ImGui::Render();
-#endif
+		imGuiManager.End();
 
 		// ────────────────────────────────────────────────────
 		// 描画
@@ -253,10 +162,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 		// ② 描画先をスワップチェーンに戻して ImGui を描く
 		dxCommon.SetSwapChainRenderTarget();
 
-#ifdef USE_IMGUI
-		// ImGui もバックバッファに書き込むので、PostDraw のバリアより前
-		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), dxCommon.GetCommandList().Get());
-#endif
+		// ImGui の描画コマンドを積む
+		imGuiManager.Draw();
 
 		dxCommon.PostDraw();
 	}
@@ -266,12 +173,8 @@ int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
 	//   COM オブジェクトは ComPtr が「構築の逆順」で自動解放する。
 	//   ここに Release() を書くと二重解放になるので絶対に書かないこと
 	// ════════════════════════════════════════════════════════════════
-#ifdef USE_IMGUI
 	// ImGui は内部で device と SRV ヒープを掴んでいるので、必ず先に終了させる
-	ImGui_ImplDX12_Shutdown();
-	ImGui_ImplWin32_Shutdown();
-	ImGui::DestroyContext();
-#endif
+	imGuiManager.Finalize();
 
 	// ComPtr で扱えないもの（イベントハンドル・ウィンドウ）だけ後始末する
 	dxCommon.Finalize();

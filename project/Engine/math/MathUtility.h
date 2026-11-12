@@ -8,12 +8,14 @@
 
 
 /// <summary>
-/// 変換データ
+/// 変換データ（3D オブジェクト用）
+///   回転は Quaternion で持つ
+///   インスペクタにオイラー角で出すのは表示側の仕事（GameObject が担当）
 /// </summary>
 struct Transform {
-    Vector3 scale{ 1.0f, 1.0f, 1.0f };
-    Vector3 rotate{ 0.0f, 0.0f, 0.0f };
-    Vector3 translate{ 0.0f, 0.0f, 0.0f };
+    Vector3    scale{ 1.0f, 1.0f, 1.0f };       // 0 だと何も見えないので 1 から
+    Quaternion rotate{};                         // 既定は回転なし
+    Vector3    translate{ 0.0f, 0.0f, 0.0f };
 };
 
 /// <summary>
@@ -150,22 +152,23 @@ Matrix4x4 MakeRotateZMatrix(float radian);
 //    向きとしては正しいが、数値は一意に決まらない
 Vector3 MakeEulerXYZFromMatrix(const Matrix4x4& rotation);
 
-// --- 3次元アフィン変換行列の作成（オイラー角版） ---
-//   ※ Transform::rotate を Quaternion にしたら、最終的には下の版だけを残す
-Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Vector3& rotate, const Vector3& translate);
-
-// --- 3次元アフィン変換行列の作成（クォータニオン版） ---
+// --- 3次元アフィン変換行列の作成 ---
 Matrix4x4 MakeAffineMatrix(const Vector3& scale, const Quaternion& rotate, const Vector3& translate);
+
+// --- 2次元アフィン変換行列の作成 ---
+//   スプライトや UV のように xy 平面しか使わないもの向け
+//   回転は Z 軸まわり1つだけ。3D 版に単位の値を詰めるより意図が伝わる
+Matrix4x4 MakeAffineMatrix2D(const Vector2& scale, float rotate, const Vector2& translate);
 
 // --- UV 変換行列の作成 ---
 //   シェーダの gMaterial.uvTransform に渡すもの
 Matrix4x4 MakeUVMatrix(const UVTransform& uv);
 
 // --- アフィン変換行列を scale / rotate / translate に分解する ---
-//   MakeAffineMatrix の逆。rotate は XYZ 順のオイラー角
-//   ※ 完全には元に戻らない
-//     ・ジンバルロック（Y が ±90度付近）では x と z の分け方が一通りに決まらない
-//     ・鏡像（負のスケール）は長さからは判別できないので、正のスケールとして返る
+//   MakeAffineMatrix の逆。rotate は Quaternion
+//   ※ 鏡像（負のスケール）は長さからは判別できないので、正のスケールとして返る
+//     ジンバルロックによる「x と z の分け方が決まらない」問題は、
+//     Quaternion にしたことで消えた（回転は一意に取り出せる）
 Transform DecomposeAffineMatrix(const Matrix4x4& matrix);
 
 // --- レンダリングパイプライン ---

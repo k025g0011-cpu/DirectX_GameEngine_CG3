@@ -133,8 +133,19 @@ private:
 	std::string name_;
 	bool isActive_ = true;
 
-	// 必ず持つ。scale は 1 から始める（0 だと何も見えない）
-	Transform transform_{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
+	// 必ず持つ。既定値は Transform 側に書いてある（scale = 1、回転なし、原点）
+	Transform transform_{};
+
+	// ────────────────────────────────────────────────────────────────
+	// インスペクタに角度を出すための覚え書き
+	//   Quaternion を毎フレーム角度に戻すと、同じ向きでも違う数字が出ることがあり、
+	//   ドラッグ中に値が飛ぶ
+	//     → 表示している角度と、それを作ったときの Quaternion を覚えておき、
+	//       外から回転が変わったときだけ作り直す
+	//   「見た目の都合」なので private に閉じ込める。計算には一切使わない
+	// ────────────────────────────────────────────────────────────────
+	Vector3    editorEuler_{ 0.0f, 0.0f, 0.0f };
+	Quaternion editorEulerSource_{};
 
 	// 足された機能たち。unique_ptr なので GameObject と寿命を共にする
 	std::vector<std::unique_ptr<Component>> components_;

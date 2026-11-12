@@ -23,7 +23,11 @@ void Camera::Update() {
 	//     ワールド基準で、カメラはどこにいて、どちらを向いているか
 	//     カメラ自身は拡縮しないのでスケールは単位
 	// ────────────────────────────────────────
-	worldMatrix_ = MakeAffineMatrix({ 1.0f, 1.0f, 1.0f }, rotate_, translate_);
+	//   Camera はオイラー角で向きを持っているので、変換してから渡す
+	//     E-1 でコンポーネント化すると GameObject の Transform を使うようになり、
+	//     この変換は不要になる
+	worldMatrix_ = MakeAffineMatrix(
+		{ 1.0f, 1.0f, 1.0f }, MakeRotateXYZQuaternion(rotate_), translate_);
 
 	// ────────────────────────────────────────
 	// ② ビュー行列＝ワールド行列の逆行列
