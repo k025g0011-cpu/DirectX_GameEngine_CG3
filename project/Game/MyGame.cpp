@@ -27,3 +27,11 @@ void MyGame::Update() {
 void MyGame::Draw() {
 	gameScene_.Draw();
 }
+
+// ════════════════════════════════════════════════════════════════════
+// 画面に出すオフスクリーン
+//   どこに描いたかを知っているのはシーンだけなので、そのまま訊く
+// ════════════════════════════════════════════════════════════════════
+RenderTexture* MyGame::GetPresentTexture() {
+	return gameScene_.GetPresentTexture();
+}

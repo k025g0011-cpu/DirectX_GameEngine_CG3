@@ -67,6 +67,14 @@ public:
 	/// <summary>テクスチャとして読むための GPU ハンドル（ImGui::Image にも渡せる）</summary>
 	D3D12_GPU_DESCRIPTOR_HANDLE GetSrvGpuHandle() const;
 
+	/// <summary>カラーのリソース本体（CopyResource の転送元に使う）</summary>
+	ID3D12Resource* GetColorResource() const { return colorResource_.Get(); }
+
+	/// <summary>コピー元として読める状態にする</summary>
+	///  使い終わったら PostDraw() で読み取り状態に戻すこと
+	///   COPY_SOURCE のまま放置すると、次に SRV として読む人がエラーになる
+	void TransitionToCopySource() { TransitionTo(D3D12_RESOURCE_STATE_COPY_SOURCE); }
+
 private:
 	// カラーのリソース + RTV + SRV を作る
 	void CreateColorResource();

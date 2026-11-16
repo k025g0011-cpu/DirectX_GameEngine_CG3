@@ -62,6 +62,12 @@ public:
 	/// </summary>
 	void SetSwapChainRenderTarget();
 
+	/// <summary>テクスチャの中身をバックバッファへ丸ごと転送する</summary>
+	///   ImGui が無いビルドで、オフスクリーンを画面に出すための経路
+	///   source は COPY_SOURCE 状態で渡すこと（呼ぶ側の責任）
+	///   解像度とフォーマットの系統が一致している必要がある
+	/// <param name="source">転送元。バックバッファと同じ大きさであること</param>
+	void CopyToBackBuffer(ID3D12Resource* source);
 
 	// 積んだコマンドを実行し、GPU の完了を待つ
 	//   テクスチャ転送など、描画ループの外で使う単発処理用

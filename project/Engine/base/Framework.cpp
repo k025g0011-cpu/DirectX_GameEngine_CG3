@@ -7,6 +7,7 @@
 
 #include "CrashHandler.h"
 #include "Logger.h"
+#include "RenderTexture.h"
 
 namespace {
 
@@ -60,7 +61,22 @@ void Framework::Run() {
 		//    シーンをオフスクリーンに描く（描画先の選択はゲーム側）
 		Draw();
 
-		//    描画先をスワップチェーンに戻して ImGui を描く
+		// ────────────────────────────────────────────────────────
+		//    ImGui が無いビルドでは、画面へ出す経路がここしかない
+		//      ImGui があるときは ImGui::Image がパネルに貼ってくれる
+		//    コピーは RTV を張る前に済ませる（バリアが絡むため）
+		// ────────────────────────────────────────────────────────
+		if (!ImGuiManager::IsEnabled()) {
+			if (RenderTexture* presentTexture = GetPresentTexture()) { // オフスクリーン描画があるときだけコピーする
+				presentTexture->TransitionToCopySource(); // COPY_SOURCE（コピー元）にする。PostDraw() で読み取り状態に戻すこと
+				dxCommon_.CopyToBackBuffer(presentTexture->GetColorResource()); // バックバッファにコピーする
+
+				presentTexture->PostDraw(); // COPY_SOURCE のままだと次に SRV として読む人がエラーになるので、読み取り状態に戻す
+			}
+		}
+
+
+		// 描画先をスワップチェーンに戻して ImGui を描く
 		dxCommon_.SetSwapChainRenderTarget();
 		imGuiManager_.Draw();
 
@@ -143,6 +159,8 @@ void Framework::Initialize() {
 	context_.primitiveDrawer = &primitiveDrawer_;
 	context_.input = &input_;
 	context_.gameTime = &gameTime_;
+
+	Log(logStream_, std::format("ImGui enabled : {}\n", ImGuiManager::IsEnabled()));
 }
 
 // ════════════════════════════════════════════════════════════════════

@@ -474,7 +474,46 @@ void DirectXCommon::SetSwapChainRenderTarget() {
 	commandList_->RSSetScissorRects(1, &scissorRect_);
 }
 
+// ════════════════════════════════════════════════════════════════════
+// テクスチャをバックバッファへ丸ごと転送する
+//
+//   ── なぜバリアが要るのか ──
+//   D3D12 はリソースの「用途」を状態として持っていて、
+//   用途が変わるたびに宣言しないと GPU がキャッシュを捨ててくれない
+//     描画先として書く     RENDER_TARGET
+//     コピー先として書く   COPY_DEST
+//   PreDraw で RENDER_TARGET にしてあるので、往復させる
+//
+//   ── CopyResource の条件 ──
+//   ・解像度が同じ（どちらも GetClientWidth / Height 由来）
+//   ・フォーマットが同じ系統（UNORM と UNORM_SRGB は R8G8B8A8_TYPELESS の仲間）
+// ════════════════════════════════════════════════════════════════════
+void DirectXCommon::CopyToBackBuffer(ID3D12Resource* source) {
 
+	assert(source != nullptr); // 転送元が nullptr では困る
+
+	ID3D12Resource* backBuffer = swapChainResources_[backBufferIndex_].Get();
+
+	D3D12_RESOURCE_BARRIER barrier{}; // バリアの設定を作る
+	barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION; // 用途の変化を表すバリア(これからこのリソースの用途を変えますってやつ）
+	barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;      // 特殊なフラグはなし
+	barrier.Transition.pResource = backBuffer;			   // バリアを張る対象のリソース
+	barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES; // 全てのサブリソースに対してバリアを張る
+
+	//   描画先 → コピー先(ImGuiが作ったオフスクリーンを実際の画面に出すバックバッファにコピーするため)
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_DEST; // コピー先として書き込む状態に変える
+	commandList_->ResourceBarrier(1, &barrier); // バリアを張る
+
+	//   中身を丸ごと転送する。シェーダもラスタライズも通らない、ただのメモリ転送
+	commandList_->CopyResource(backBuffer, source);
+
+
+	//   コピー先 → 描画先（PostDraw が RENDER_TARGET からの遷移を前提にしている）
+	barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	commandList_->ResourceBarrier(1, &barrier);
+}
 
 // ════════════════════════════════════════════════════════════════════
 // 描画前処理

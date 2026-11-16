@@ -158,3 +158,17 @@ bool ImGuiManager::IsTextInputActive() const {
 	return false;
 #endif
 }
+
+// ━━━ 追加 ━━━
+// ════════════════════════════════════════════════════════════════════
+// ImGui が使えるビルドか
+//   この翻訳単位での USE_IMGUI の状態を、そのまま外へ伝える
+//   Begin / End / Draw が空かどうかと、必ず同じ答えになる
+// ════════════════════════════════════════════════════════════════════
+bool ImGuiManager::IsEnabled() {
+#ifdef USE_IMGUI
+	return true;
+#else
+	return false;
+#endif
+}

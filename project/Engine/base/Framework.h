@@ -16,6 +16,9 @@
 #include "WinApp.h"
 #include "CrashHandler.h"
 
+// 前方宣言（ポインタとしてしか使わないので #include 不要）
+class RenderTexture;
+
 // ════════════════════════════════════════════════════════════════════
 // ゲームの骨格
 //   エンジンの道具を全部持ち、起動 → ループ → 終了の順番を握る
@@ -71,6 +74,10 @@ protected:
 	/// <summary>終了処理。派生は自分の後始末をしてから Framework::Finalize() を呼ぶ</summary>
 	virtual void Finalize();
 
+	/// <summary>画面に出すオフスクリーン。nullptr ならコピーしない</summary>
+	///   ImGui があるビルドでは、ゲーム画面は ImGui のパネルの中に出るので使われない
+	///   どのテクスチャに描いているかはゲームしか知らないので、ここで訊く
+	virtual RenderTexture* GetPresentTexture() { return nullptr; }
 	// ────────────────────────────────────────────────────────────────
 	// 派生が使える機能
 	// ────────────────────────────────────────────────────────────────

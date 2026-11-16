@@ -8,6 +8,7 @@
 #include "GameTime.h"
 #include "WinApp.h"
 #include "PrimitiveDrawer.h"
+#include "ImGuiManager.h"
 
 #ifdef USE_IMGUI
 #include "externals/imgui/imgui.h"
@@ -51,6 +52,16 @@ void Editor::Initialize(const EngineContext& context, Camera* gameCamera) {
 
 	context_ = &context;
 	gameCamera_ = gameCamera;
+
+	// ════════════════════════════════════════
+	// ImGui が無いビルドにはタブが無いので、ビューを切り替える手段がない
+	//   ゲームとして配る構成なので、ゲームカメラ固定にする
+	//   これで DrawEditorGizmos も DrawGizmos も自動的に出なくなる
+	//     （どちらも ViewMode::Edit のときだけ描く条件になっている）
+	// ════════════════════════════════════════
+	if (!ImGuiManager::IsEnabled()) {
+		viewMode_ = ViewMode::Game;
+	}
 
 	// ════════════════════════════════════════
 	// 編集用のカメラ

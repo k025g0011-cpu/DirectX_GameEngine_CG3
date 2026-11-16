@@ -51,6 +51,14 @@ public:
 	///   キー入力をゲーム側が横取りしないようにするための判定
 	bool IsTextInputActive() const;
 
+	/// <summary>ImGui が使えるビルドか</summary>
+	///   実装は .cpp に置く
+	///     ヘッダで #ifdef を評価すると、include の順番によって
+	///     ファイルごとに違う答えが返る（ODR 違反になる）
+	///   この .cpp が「ImGui 有り」でコンパイルされたかどうかが、
+	///   Begin / End / Draw の中身と必ず一致する
+	static bool IsEnabled();
+
 private:
 	// 借りているもの（所有していない）
 	DirectXCommon* dxCommon_ = nullptr;

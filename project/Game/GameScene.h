@@ -36,6 +36,10 @@ public:
 	/// <summary>オフスクリーンへの描画</summary>
 	void Draw();
 
+	/// <summary>いま描いているオフスクリーン（画面へ出す用）</summary>
+	///   描画先を選んでいるのは Editor なので、そこへ取り次ぐだけ
+	RenderTexture* GetPresentTexture() { return &editor_.GetActiveRenderTexture(); }
+
 private:
 	/// <summary>GameObject を作ってシーンに登録し、そのポインタを返す</summary>
 	GameObject* CreateGameObject(const std::string& name);
