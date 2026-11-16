@@ -52,6 +52,9 @@ void Framework::Run() {
 		// ② ImGui のフレーム開始 → ゲームの更新 → 内部コマンドの生成
 		//    Begin と End は必ず対で呼ぶ。間で抜けてはいけない
 		imGuiManager_.Begin();
+		//    エディタを先に更新する
+//      ドックスペースの発行が、どのパネルより前でなければならない
+		editor_.Update();
 		Update();
 		imGuiManager_.End();
 
@@ -67,12 +70,15 @@ void Framework::Run() {
 		//    コピーは RTV を張る前に済ませる（バリアが絡むため）
 		// ────────────────────────────────────────────────────────
 		if (!ImGuiManager::IsEnabled()) {
-			if (RenderTexture* presentTexture = GetPresentTexture()) { // オフスクリーン描画があるときだけコピーする
-				presentTexture->TransitionToCopySource(); // COPY_SOURCE（コピー元）にする。PostDraw() で読み取り状態に戻すこと
-				dxCommon_.CopyToBackBuffer(presentTexture->GetColorResource()); // バックバッファにコピーする
 
-				presentTexture->PostDraw(); // COPY_SOURCE のままだと次に SRV として読む人がエラーになるので、読み取り状態に戻す
-			}
+			//   どのオフスクリーンに描いたかは Editor が決めている
+			RenderTexture& presentTexture = editor_.GetActiveRenderTexture();
+
+			presentTexture.TransitionToCopySource();   // COPY_SOURCE（コピー元）にする
+			dxCommon_.CopyToBackBuffer(presentTexture.GetColorResource());
+
+			//   COPY_SOURCE のままだと、次に SRV として読む人がエラーになる
+			presentTexture.PostDraw();
 		}
 
 
@@ -160,7 +166,9 @@ void Framework::Initialize() {
 	context_.input = &input_;
 	context_.gameTime = &gameTime_;
 
-	Log(logStream_, std::format("ImGui enabled : {}\n", ImGuiManager::IsEnabled()));
+	//   エディタは context_ を握るので、中身が揃ってから初期化する
+		//     ゲームカメラは、シーンができたあとに SetGameCamera で渡される
+	editor_.Initialize(context_);
 }
 
 // ════════════════════════════════════════════════════════════════════

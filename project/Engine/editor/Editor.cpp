@@ -48,10 +48,9 @@ namespace {
 // ════════════════════════════════════════════════════════════════════
 // 初期化
 // ════════════════════════════════════════════════════════════════════
-void Editor::Initialize(const EngineContext& context, Camera* gameCamera) {
+void Editor::Initialize(const EngineContext& context) {
 
 	context_ = &context;
-	gameCamera_ = gameCamera;
 
 	// ════════════════════════════════════════
 	// ImGui が無いビルドにはタブが無いので、ビューを切り替える手段がない
@@ -122,9 +121,9 @@ RenderTexture& Editor::GetActiveRenderTexture() {
 // いま使うカメラのビュー×射影行列
 // ════════════════════════════════════════════════════════════════════
 const Matrix4x4& Editor::GetViewProjectionMatrix() const {
-	return (viewMode_ == ViewMode::Edit)
-		? debugCamera_.GetViewProjectionMatrix()
-		: gameCamera_->GetViewProjectionMatrix();
+	return UseGameCamera()
+		? gameCamera_->GetViewProjectionMatrix()
+		: debugCamera_.GetViewProjectionMatrix();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -132,18 +131,18 @@ const Matrix4x4& Editor::GetViewProjectionMatrix() const {
 //   ビルボードのように「カメラの向き」が必要なときに使う
 // ════════════════════════════════════════════════════════════════════
 const Matrix4x4& Editor::GetViewMatrix() const {
-	return (viewMode_ == ViewMode::Edit)
-		? debugCamera_.GetViewMatrix()
-		: gameCamera_->GetViewMatrix();
+	return UseGameCamera()
+		? gameCamera_->GetViewMatrix()
+		: debugCamera_.GetViewMatrix();
 }
 
 // ════════════════════════════════════════════════════════════════════
 // いま使うカメラの射影行列
 // ════════════════════════════════════════════════════════════════════
 const Matrix4x4& Editor::GetProjectionMatrix() const {
-	return (viewMode_ == ViewMode::Edit)
-		? debugCamera_.GetProjectionMatrix()
-		: gameCamera_->GetProjectionMatrix();
+	return UseGameCamera()
+		? gameCamera_->GetProjectionMatrix()
+		: debugCamera_.GetProjectionMatrix();
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -159,9 +158,10 @@ CameraData Editor::GetCameraData() const {
 	camera.viewProjectionMatrix = GetViewProjectionMatrix();
 
 	// カメラの位置。鏡面反射で「どこから見ているか」に使う
-	camera.worldPosition = (viewMode_ == ViewMode::Edit)
-		? debugCamera_.GetWorldPosition()
-		: gameCamera_->GetTranslate();
+	//   Camera は親を持たないので、translate がそのままワールド座標になる
+	camera.worldPosition = UseGameCamera()
+		? gameCamera_->GetTranslate()
+		: debugCamera_.GetWorldPosition();
 
 	return camera;
 }

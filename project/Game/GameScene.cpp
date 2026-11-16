@@ -25,16 +25,18 @@
 // 初期化
 //   このシーンに何を出すかを決める場所
 // ════════════════════════════════════════════════════════════════════
-void GameScene::Initialize(const EngineContext& context) {
+void GameScene::Initialize(const EngineContext& context, Editor* editor) {
 
-	context_ = context;
+	context_ = context;	
+	editor_ = editor;
 
 	// ════════════════════════════════════════
-	// カメラとエディタ
-	//   エディタはゲームカメラを知る必要がある（ゲームタブで使うため）
+	// カメラ
+	//   エディタは Framework が作っている。こちらは
+	//   「ゲームビューで使うのはこのカメラ」と伝えるだけ
 	// ════════════════════════════════════════
 	camera_.Initialize(context_.winApp->GetAspectRatio());
-	editor_.Initialize(context_, &camera_);
+	editor_->SetGameCamera(&camera_);
 
 	// ════════════════════════════════════════
 	// モデルを用意する
@@ -231,21 +233,19 @@ GameObject* GameScene::BuildNodeObject(Model* model, uint32_t nodeIndex, GameObj
 void GameScene::Update() {
 
 	// ════════════════════════════════════════
-	// ① エディタ（レイアウト・ビュー・ツールバー・編集カメラ）
+	// ① ゲームカメラ
+	//    エディタの更新は Framework::Run が済ませている
 	// ════════════════════════════════════════
-	editor_.Update();
-
-	// ② ゲームカメラ
 	camera_.Update();
 
 	// ════════════════════════════════════════
-	// ③ このゲーム固有のパネル
+	// ② このゲーム固有のパネル
 	// ════════════════════════════════════════
 	DrawSettingsPanel();
 	DrawDebugPanel();
 
-	// ④ オブジェクト一覧と詳細（中身はエディタが描く）
-	editor_.DrawObjectPanels(gameObjects_);
+	// ③ オブジェクト一覧と詳細（中身はエディタが描く）
+	editor_->DrawObjectPanels(gameObjects_);
 
 	// ════════════════════════════════════════
 	// ⑥-a 全オブジェクトの更新
@@ -281,10 +281,10 @@ void GameScene::Update() {
 // ════════════════════════════════════════════════════════════════════
 void GameScene::Draw() {
 
-	RenderTexture& target = editor_.GetActiveRenderTexture();
+	RenderTexture& target = editor_->GetActiveRenderTexture();
 
 	target.PreDraw();
-	DrawScene(editor_.GetCameraData());
+	DrawScene(editor_->GetCameraData());
 	target.PostDraw();
 }
 
@@ -299,11 +299,11 @@ void GameScene::DrawScene(const CameraData& camera) {
 	context_.primitiveDrawer->Reset();
 
 	//   グリッドと座標軸はエディタの備品。出すかどうかも Editor が判断する
-	editor_.DrawEditorGizmos();
+	editor_->DrawEditorGizmos();
 
 	// オブジェクトのデバッグ線はシーン側が積む。出すかどうかはエディタに訊く
 	//   デバッグ表示は編集ビューのときだけ。ゲーム画面には出さない
-	if (editor_.IsGizmosVisible() && editor_.GetViewMode() == ViewMode::Edit) {
+	if (editor_->IsGizmosVisible() && editor_->GetViewMode() == ViewMode::Edit) {
 		DrawGizmos();
 	}
 
@@ -474,7 +474,7 @@ void GameScene::DrawGizmos() {
 void GameScene::DrawSettingsPanel() {
 #ifdef USE_IMGUI
 
-	if (editor_.BeginPanel(EditorPanel::Settings)) {
+	if (editor_->BeginPanel(EditorPanel::Settings)) {
 
 		// ───── ゲームカメラ ─────
 		Vector3 cameraTranslate = camera_.GetTranslate();
@@ -540,7 +540,7 @@ void GameScene::DrawSettingsPanel() {
 		}
 
 	}
-	editor_.EndPanel();
+	editor_->EndPanel();
 
 #endif
 }
@@ -551,7 +551,7 @@ void GameScene::DrawSettingsPanel() {
 void GameScene::DrawDebugPanel() {
 #ifdef USE_IMGUI
 
-	if (editor_.BeginPanel(EditorPanel::Debug)) {
+	if (editor_->BeginPanel(EditorPanel::Debug)) {
 
 		// ───── 時間 ─────
 		ImGui::Text("dt       : %.4f s", context_.gameTime->GetUnscaledDeltaTime());
@@ -569,11 +569,11 @@ void GameScene::DrawDebugPanel() {
 		ImGui::Separator();
 
 		// ───── ビューと編集カメラ ─────
-		const DebugCamera& debugCamera = editor_.GetDebugCamera();
+		const DebugCamera& debugCamera = editor_->GetDebugCamera();
 
 		ImGui::Text("view     : %s",
-			editor_.GetViewMode() == ViewMode::Edit ? "編集" : "ゲーム");
-		ImGui::Text("hovered  : %s", editor_.IsViewHovered() ? "YES" : "no");
+			editor_->GetViewMode() == ViewMode::Edit ? "編集" : "ゲーム");
+		ImGui::Text("hovered  : %s", editor_->IsViewHovered() ? "YES" : "no");
 		ImGui::Text("cam input: %s", debugCamera.IsInputEnabled() ? "ENABLED" : "disabled");
 		ImGui::Separator();
 
@@ -593,7 +593,7 @@ void GameScene::DrawDebugPanel() {
 			context_.input->GetMouseMove().x, context_.input->GetMouseMove().y,
 			context_.input->GetMouseWheel());
 	}
-	editor_.EndPanel();
+	editor_->EndPanel();
 
 #endif
 }

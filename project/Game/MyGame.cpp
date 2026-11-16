@@ -9,7 +9,8 @@ void MyGame::Initialize() {
 	//     これより前に GetContext() を呼んでも、中身は空
 	Framework::Initialize();
 
-	gameScene_.Initialize(GetContext());
+	//   エディタは Framework が持っている。シーンは借りるだけ
+	gameScene_.Initialize(GetContext(), &GetEditor());
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -26,12 +27,4 @@ void MyGame::Update() {
 // ════════════════════════════════════════════════════════════════════
 void MyGame::Draw() {
 	gameScene_.Draw();
-}
-
-// ════════════════════════════════════════════════════════════════════
-// 画面に出すオフスクリーン
-//   どこに描いたかを知っているのはシーンだけなので、そのまま訊く
-// ════════════════════════════════════════════════════════════════════
-RenderTexture* MyGame::GetPresentTexture() {
-	return gameScene_.GetPresentTexture();
 }

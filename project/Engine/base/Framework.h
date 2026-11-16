@@ -4,6 +4,7 @@
 
 #include "AssetDatabase.h"
 #include "DirectXCommon.h"
+#include "Editor.h"
 #include "EngineContext.h"
 #include "GameTime.h"
 #include "ImGuiManager.h"
@@ -15,9 +16,6 @@
 #include "TextureManager.h"
 #include "WinApp.h"
 #include "CrashHandler.h"
-
-// 前方宣言（ポインタとしてしか使わないので #include 不要）
-class RenderTexture;
 
 // ════════════════════════════════════════════════════════════════════
 // ゲームの骨格
@@ -74,16 +72,16 @@ protected:
 	/// <summary>終了処理。派生は自分の後始末をしてから Framework::Finalize() を呼ぶ</summary>
 	virtual void Finalize();
 
-	/// <summary>画面に出すオフスクリーン。nullptr ならコピーしない</summary>
-	///   ImGui があるビルドでは、ゲーム画面は ImGui のパネルの中に出るので使われない
-	///   どのテクスチャに描いているかはゲームしか知らないので、ここで訊く
-	virtual RenderTexture* GetPresentTexture() { return nullptr; }
 	// ────────────────────────────────────────────────────────────────
 	// 派生が使える機能
 	// ────────────────────────────────────────────────────────────────
 
 	/// <summary>エンジンの道具一式。シーンに渡す</summary>
 	const EngineContext& GetContext() const { return context_; }
+
+	/// <summary>エディタ。シーンがパネルを借りるために渡す</summary>
+	///   所有は Framework。シーンは借りるだけ
+	Editor& GetEditor() { return editor_; }
 
 	/// <summary>終了を要求する。次のフレームの頭でループを抜ける</summary>
 	///   ゲーム内のメニューから「終了」を押したときなどに使う
@@ -123,6 +121,11 @@ private:
 	//   dxCommon_ より後に宣言する ＝ dxCommon_ より先に壊れる
 	//     ImGui は内部で device と SRV ヒープを掴んでいる
 	ImGuiManager imGuiManager_;
+
+
+	//   エディタ。オフスクリーンを2枚持つので、dxCommon_ より先に壊れる必要がある
+	//     GameScene から移してきた。シーンを増やしてもエディタは1つ
+	Editor editor_;
 
 	//   上の道具のポインタを束ねたもの
 	EngineContext context_{};

@@ -28,17 +28,15 @@ class Model;
 class GameScene {
 public:
 	/// <summary>初期化。モデルの読み込みとオブジェクトの配置</summary>
-	void Initialize(const EngineContext& context);
+	/// <param name="context">エンジンの道具一式</param>
+	/// <param name="editor">エディタ。所有は Framework。パネルを借りるために受け取る</param>
+	void Initialize(const EngineContext& context,Editor* editor);
 
 	/// <summary>毎フレームの更新（描画コマンドは積まない）</summary>
 	void Update();
 
 	/// <summary>オフスクリーンへの描画</summary>
 	void Draw();
-
-	/// <summary>いま描いているオフスクリーン（画面へ出す用）</summary>
-	///   描画先を選んでいるのは Editor なので、そこへ取り次ぐだけ
-	RenderTexture* GetPresentTexture() { return &editor_.GetActiveRenderTexture(); }
 
 private:
 	/// <summary>GameObject を作ってシーンに登録し、そのポインタを返す</summary>
@@ -78,9 +76,10 @@ private:
 	EngineContext context_{};
 
 	// ────────────────────────────────────────────────────────────────
-	// エディタ（画面構成・編集カメラ・描画先を持つ）
+	// エディタ（所有は Framework。ここは借りているだけ）
+	//  
 	// ────────────────────────────────────────────────────────────────
-	Editor editor_;
+	Editor* editor_ = nullptr;
 
 	// ────────────────────────────────────────────────────────────────
 	// ゲームカメラ

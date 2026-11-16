@@ -13,7 +13,6 @@ protected:
 	void Initialize() override;
 	void Update() override;
 	void Draw() override;
-	RenderTexture* GetPresentTexture() override;
 
 private:
 	//   Framework より後に壊れるものはここに書く

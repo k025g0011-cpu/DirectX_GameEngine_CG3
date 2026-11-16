@@ -23,7 +23,15 @@ enum class ViewMode : uint32_t {
 /// <summary>エディタ画面（レイアウト・ツールバー・ビュー・アセット）を持つ係</summary>
 class Editor {
 public:
-	void Initialize(const EngineContext& context, Camera* gameCamera);
+	/// <summary>初期化</summary>
+	///   ゲームカメラはシーンができたあとに SetGameCamera で渡す
+	///   Framework が Editor を作る時点では、まだシーンが存在しないため
+	void Initialize(const EngineContext& context);
+
+	/// <summary>ゲームビューで使うカメラを指定する</summary>
+	///   シーンが「このカメラがメイン」と宣言する窓口
+	///   E-1 で CameraComponent になったら、ここが差し替え点になる
+	void SetGameCamera(Camera* gameCamera) { gameCamera_ = gameCamera; }
 
 	/// <summary>毎フレーム。レイアウト計算 → ドロップ取り込み → 各パネル描画 → デバッグカメラ更新</summary>
 	void Update();
@@ -74,6 +82,13 @@ private:
 	const Matrix4x4& GetViewMatrix() const;
 	const Matrix4x4& GetProjectionMatrix() const;
 	const Matrix4x4& GetViewProjectionMatrix() const;
+
+	/// <summary>いまゲームカメラを使うべきか</summary>
+	///   ゲームビューでも、まだカメラを渡されていなければ編集カメラで代用する
+	///   起動直後の1フレームと、カメラを持たないシーンで nullptr 参照を防ぐ
+	bool UseGameCamera() const {
+		return viewMode_ == ViewMode::Game && gameCamera_ != nullptr;
+	}
 
 	const EngineContext* context_ = nullptr;
 	Camera* gameCamera_ = nullptr;
